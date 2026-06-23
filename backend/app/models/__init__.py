@@ -1,0 +1,16 @@
+from app.models.entities import (  # noqa: F401
+    Attendance,
+    Classroom,
+    DisciplineLoad,
+    Execution,
+    Faculty,
+    Performance,
+    Schedule,
+    Speciality,
+    Student,
+    StudentGroup,
+    StudyWeek,
+    Subject,
+    Teacher,
+    User,
+)
