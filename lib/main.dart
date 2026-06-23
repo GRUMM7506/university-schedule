@@ -6,6 +6,7 @@ import 'routes/app_router.dart';
 import 'services/academic_service.dart';
 import 'services/api_client.dart';
 import 'services/auth_service.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const UniversityApp());
@@ -41,17 +42,9 @@ class _UniversityAppState extends State<UniversityApp> {
       child: MaterialApp.router(
         title: 'University ERP',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF176B87)),
-          visualDensity: VisualDensity.standard,
-          cardTheme: const CardThemeData(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(8)),
-            ),
-          ),
-        ),
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        themeMode: ThemeMode.system,
         routerConfig: router,
       ),
     );

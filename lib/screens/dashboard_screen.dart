@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/app_state.dart';
+import '../widgets/glass.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -28,9 +29,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        Text(
-          'Панель управления',
-          style: Theme.of(context).textTheme.headlineSmall,
+        GlassPanel(
+          padding: const EdgeInsets.all(28),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Панель управления',
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Обзор ключевых показателей учебного процесса.',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.query_stats_outlined,
+                size: 42,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 18),
         if (stats == null)
@@ -78,19 +106,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ) {
     return SizedBox(
       width: 260,
-      height: 132,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon),
-              const Spacer(),
-              Text('$value', style: Theme.of(context).textTheme.headlineMedium),
-              Text(title, overflow: TextOverflow.ellipsis),
-            ],
-          ),
+      height: 146,
+      child: GlassPanel(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: .12),
+              ),
+              child: Icon(icon, color: Theme.of(context).colorScheme.primary),
+            ),
+            const Spacer(),
+            Text(
+              '$value',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ),
     );

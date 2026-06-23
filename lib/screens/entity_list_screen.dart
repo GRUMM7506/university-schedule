@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/entity_model.dart';
 import '../providers/entity_provider.dart';
 import '../widgets/entity_form_dialog.dart';
+import '../widgets/glass.dart';
 
 class EntityListScreen extends StatefulWidget {
   const EntityListScreen({super.key, required this.definition});
@@ -34,33 +35,42 @@ class _EntityListScreenState extends State<EntityListScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.definition.title,
-                  style: Theme.of(context).textTheme.headlineSmall,
+          GlassPanel(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.definition.title,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () => _openForm(context),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Добавить'),
+                    ),
+                  ],
                 ),
-              ),
-              FilledButton.icon(
-                onPressed: () => _openForm(context),
-                icon: const Icon(Icons.add),
-                label: const Text('Добавить'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SearchBar(
-            hintText: 'Поиск',
-            leading: const Icon(Icons.search),
-            onChanged: (value) {
-              provider.search = value;
-              provider.load();
-            },
+                const SizedBox(height: 16),
+                SearchBar(
+                  hintText: 'Поиск',
+                  leading: const Icon(Icons.search),
+                  onChanged: (value) {
+                    provider.search = value;
+                    provider.load();
+                  },
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           Expanded(
-            child: Card(
+            child: GlassPanel(
+              padding: EdgeInsets.zero,
               child: provider.loading
                   ? const Center(child: CircularProgressIndicator())
                   : provider.error != null
