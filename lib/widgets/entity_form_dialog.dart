@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../models/entity_model.dart';
+import '../services/academic_service.dart';
 
 class EntityFormDialog extends StatefulWidget {
-  const EntityFormDialog({super.key, required this.definition, this.initial});
+  const EntityFormDialog({
+    super.key,
+    required this.definition,
+    required this.academicService,
+    this.initial,
+  });
 
   final EntityDefinition definition;
   final EntityModel? initial;
+  final AcademicService academicService;
 
   @override
   State<EntityFormDialog> createState() => _EntityFormDialogState();
@@ -15,6 +22,11 @@ class EntityFormDialog extends StatefulWidget {
 class _EntityFormDialogState extends State<EntityFormDialog> {
   final formKey = GlobalKey<FormState>();
   late final Map<String, TextEditingController> controllers;
+  // Selected int values for fkSelect fields
+  final Map<String, int?> fkValues = {};
+  // Loaded reference data for fkSelect fields
+  final Map<String, List<Map<String, dynamic>>> fkOptions = {};
+  bool loadingRefs = false;
 
   @override
   void initState() {
@@ -25,6 +37,32 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
           text: widget.initial?[field.key]?.toString() ?? '',
         ),
     };
+    // Pre-populate fkValues from initial data
+    for (final field in widget.definition.fields) {
+      if (field.type == FieldType.fkSelect) {
+        final v = widget.initial?[field.key];
+        fkValues[field.key] = v is int ? v : int.tryParse(v?.toString() ?? '');
+      }
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadFkRefs());
+  }
+
+  Future<void> _loadFkRefs() async {
+    final fkFields = widget.definition.fields.where(
+      (f) => f.type == FieldType.fkSelect && f.refEndpoint != null,
+    );
+    if (fkFields.isEmpty) return;
+    setState(() => loadingRefs = true);
+    // Use the service passed in — avoids Provider lookup across route boundaries
+    for (final field in fkFields) {
+      try {
+        final data = await widget.academicService.list(field.refEndpoint!);
+        fkOptions[field.key] = data;
+      } catch (_) {
+        fkOptions[field.key] = [];
+      }
+    }
+    if (mounted) setState(() => loadingRefs = false);
   }
 
   @override
@@ -37,25 +75,31 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: Text(widget.initial == null ? 'Добавить' : 'Редактировать'),
       content: SizedBox(
         width: 560,
-        child: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final field in widget.definition.fields)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _field(field),
+        child: loadingRefs
+            ? const SizedBox(
+                height: 120,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final field in widget.definition.fields)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _field(field, scheme),
+                        ),
+                    ],
                   ),
-              ],
-            ),
-          ),
-        ),
+                ),
+              ),
       ),
       actions: [
         TextButton(
@@ -71,16 +115,78 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
     );
   }
 
-  Widget _field(EntityField field) {
-    if (field.type == FieldType.select) {
-      return DropdownButtonFormField<String>(
-        initialValue: controllers[field.key]!.text.isEmpty
-            ? null
-            : controllers[field.key]!.text,
+  Widget _field(EntityField field, ColorScheme scheme) {
+    if (field.type == FieldType.fkSelect) {
+      final options = fkOptions[field.key] ?? [];
+      final currentVal = fkValues[field.key];
+      // Ensure current value exists in options; if not, reset to null
+      final validVal = options.any((e) => e['id'] == currentVal)
+          ? currentVal
+          : null;
+
+      return DropdownButtonFormField<int>(
+        value: validVal,
+        isExpanded: true,
         decoration: InputDecoration(
           labelText: field.label,
-          border: const OutlineInputBorder(),
+          prefixIcon: Icon(
+            Icons.link_outlined,
+            size: 18,
+            color: scheme.primary,
+          ),
         ),
+        menuMaxHeight: 320,
+        items: options.map((e) {
+          final id = e['id'] as int;
+          final labelVal = e[field.refLabelKey] ?? e['name'] ?? '#$id';
+          return DropdownMenuItem<int>(
+            value: id,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '#$id',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '$labelVal',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+        onChanged: (v) => setState(() => fkValues[field.key] = v),
+        validator: (v) =>
+            field.required && v == null ? 'Выберите значение' : null,
+      );
+    }
+
+    if (field.type == FieldType.select) {
+      return DropdownButtonFormField<String>(
+        value: controllers[field.key]!.text.isEmpty
+            ? null
+            : controllers[field.key]!.text,
+        isExpanded: true,
+        decoration: InputDecoration(labelText: field.label),
+        menuMaxHeight: 320,
         items: field.options!.entries
             .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
             .toList(),
@@ -90,12 +196,10 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
             : null,
       );
     }
+
     return TextFormField(
       controller: controllers[field.key],
-      decoration: InputDecoration(
-        labelText: field.label,
-        border: const OutlineInputBorder(),
-      ),
+      decoration: InputDecoration(labelText: field.label),
       keyboardType: switch (field.type) {
         FieldType.number => TextInputType.number,
         FieldType.email => TextInputType.emailAddress,
@@ -109,19 +213,21 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
   }
 
   void _submit() {
-    if (!formKey.currentState!.validate()) {
-      return;
-    }
+    if (!formKey.currentState!.validate()) return;
     final payload = <String, dynamic>{};
     for (final field in widget.definition.fields) {
-      final value = controllers[field.key]!.text.trim();
-      if (value.isEmpty && !field.required) {
-        payload[field.key] = null;
-      } else if (field.type == FieldType.number ||
-          field.type == FieldType.select && int.tryParse(value) != null) {
-        payload[field.key] = int.parse(value);
+      if (field.type == FieldType.fkSelect) {
+        payload[field.key] = fkValues[field.key];
       } else {
-        payload[field.key] = value;
+        final value = controllers[field.key]!.text.trim();
+        if (value.isEmpty && !field.required) {
+          payload[field.key] = null;
+        } else if (field.type == FieldType.number ||
+            field.type == FieldType.select && int.tryParse(value) != null) {
+          payload[field.key] = int.parse(value);
+        } else {
+          payload[field.key] = value;
+        }
       }
     }
     Navigator.pop(context, payload);

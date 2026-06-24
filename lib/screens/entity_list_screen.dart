@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../models/entity_model.dart';
 import '../providers/entity_provider.dart';
+import '../services/academic_service.dart';
 import '../widgets/entity_form_dialog.dart';
 import '../widgets/glass.dart';
 
@@ -17,14 +18,86 @@ class EntityListScreen extends StatefulWidget {
 }
 
 class _EntityListScreenState extends State<EntityListScreen> {
+  final Map<String, Map<int, String>> fkResolutions = {};
+  bool loadingResolutions = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<EntityProvider>().load();
+        _loadFkResolutions();
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant EntityListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.definition != widget.definition) {
+      fkResolutions.clear();
+      _loadFkResolutions();
+    }
+  }
+
+  Future<void> _loadFkResolutions() async {
+    final fkFields = widget.definition.fields.where(
+      (f) => f.type == FieldType.fkSelect && f.refEndpoint != null,
+    );
+    if (fkFields.isEmpty) return;
+    setState(() => loadingResolutions = true);
+    final service = context.read<AcademicService>();
+    for (final field in fkFields) {
+      try {
+        final data = await service.list(field.refEndpoint!);
+        final map = <int, String>{};
+        for (final item in data) {
+          final id = item['id'] as int?;
+          if (id != null) {
+            final labelVal = item[field.refLabelKey] ?? item['displayName'] ?? item['name'] ?? '#$id';
+            map[id] = '$labelVal';
+          }
+        }
+        fkResolutions[field.key] = map;
+      } catch (e) {
+        debugPrint('Error loading resolution for ${field.key}: $e');
+      }
+    }
+    if (mounted) {
+      setState(() => loadingResolutions = false);
+    }
+  }
+
+  EntityField? _getField(String key) {
+    for (final field in widget.definition.fields) {
+      if (field.key == key) {
+        return field;
+      }
+    }
+    return null;
+  }
+
+  String _renderCellValue(String key, dynamic value) {
+    if (value == null) return '';
+    final field = _getField(key);
+    if (field == null) return value.toString();
+
+    if (field.type == FieldType.select && field.options != null) {
+      return field.options![value.toString()] ?? value.toString();
+    }
+
+    if (field.type == FieldType.fkSelect) {
+      final intId = value is int ? value : int.tryParse(value.toString());
+      if (intId != null) {
+        final resolutionMap = fkResolutions[field.key];
+        if (resolutionMap != null && resolutionMap.containsKey(intId)) {
+          return resolutionMap[intId]!;
+        }
+      }
+    }
+
+    return value.toString();
   }
 
   @override
@@ -103,7 +176,12 @@ class _EntityListScreenState extends State<EntityListScreen> {
                             cells: [
                               DataCell(Text('${item.id}')),
                               for (final column in widget.definition.columns)
-                                DataCell(Text('${item[column] ?? ''}')),
+                                DataCell(
+                                  Text(
+                                    _renderCellValue(column, item[column]),
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
                               DataCell(
                                 Row(
                                   children: [
@@ -143,10 +221,16 @@ class _EntityListScreenState extends State<EntityListScreen> {
   }
 
   Future<void> _openForm(BuildContext context, [EntityModel? item]) async {
+    // Read AcademicService BEFORE showDialog — dialog runs in a new route
+    // and cannot access the ShellRoute's provider tree.
+    final service = context.read<AcademicService>();
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) =>
-          EntityFormDialog(definition: widget.definition, initial: item),
+      builder: (_) => EntityFormDialog(
+        definition: widget.definition,
+        initial: item,
+        academicService: service,
+      ),
     );
     if (payload != null && context.mounted) {
       await context.read<EntityProvider>().save(payload, id: item?.id);

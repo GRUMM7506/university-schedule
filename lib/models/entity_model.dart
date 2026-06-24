@@ -17,6 +17,8 @@ class EntityField {
     this.type = FieldType.text,
     this.required = true,
     this.options,
+    this.refEndpoint,
+    this.refLabelKey = 'name',
   });
 
   final String key;
@@ -24,9 +26,15 @@ class EntityField {
   final FieldType type;
   final bool required;
   final Map<String, String>? options;
+
+  /// For fkSelect: endpoint to load reference records (e.g. '/groups')
+  final String? refEndpoint;
+
+  /// For fkSelect: which key from reference records to display as label
+  final String refLabelKey;
 }
 
-enum FieldType { text, number, date, email, select }
+enum FieldType { text, number, date, email, select, fkSelect }
 
 class EntityDefinition {
   const EntityDefinition({

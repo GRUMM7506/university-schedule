@@ -96,16 +96,25 @@ class _GlassBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final linePaint = Paint()
-      ..color = (dark ? Colors.white : const Color(0xFF0F172A))
-          .withValues(alpha: dark ? .055 : .045)
+      ..color = (dark ? Colors.white : const Color(0xFF0F172A)).withValues(
+        alpha: dark ? .055 : .045,
+      )
       ..strokeWidth = 1;
 
     const spacing = 42.0;
     for (double x = -spacing; x < size.width + spacing; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x + size.height * .28, size.height), linePaint);
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x + size.height * .28, size.height),
+        linePaint,
+      );
     }
     for (double y = 0; y < size.height + spacing; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y - size.width * .08), linePaint);
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y - size.width * .08),
+        linePaint,
+      );
     }
 
     final panelPaint = Paint()

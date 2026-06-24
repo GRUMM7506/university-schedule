@@ -63,7 +63,9 @@ class AppTheme {
       ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -105,7 +107,9 @@ class AppTheme {
           color: scheme.onSurface,
           fontWeight: FontWeight.w800,
         ),
-        dataTextStyle: TextStyle(color: scheme.onSurface.withValues(alpha: .82)),
+        dataTextStyle: TextStyle(
+          color: scheme.onSurface.withValues(alpha: .82),
+        ),
         headingRowColor: WidgetStatePropertyAll(
           scheme.primary.withValues(alpha: .08),
         ),

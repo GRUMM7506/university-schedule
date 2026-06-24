@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'entity_model.dart';
 
 const classroomTypes = {
@@ -21,10 +22,32 @@ const attendanceMarks = {
 const performanceMarks = {
   '0': 'Недопуск',
   '1': 'Неявка',
-  '2': 'Неудовлетворительно',
-  '3': 'Удовлетворительно',
+  '2': 'Неудовл.',
+  '3': 'Удовл.',
   '4': 'Хорошо',
   '5': 'Отлично',
+};
+
+/// Lesson type colors for schedule cards
+const lessonTypeColors = {
+  0: Color(0xFF3B82F6), // Лекция — синий
+  1: Color(0xFF10B981), // Практика — зеленый
+  2: Color(0xFFF59E0B), // Лабораторная — оранжевый
+  3: Color(0xFF8B5CF6), // Другое — фиолетовый
+};
+
+/// Icons for each entity in the navigation
+const entityIcons = {
+  '/faculties': Icons.account_balance_outlined,
+  '/specialities': Icons.auto_stories_outlined,
+  '/groups': Icons.groups_outlined,
+  '/students': Icons.person_outlined,
+  '/teachers': Icons.cast_for_education_outlined,
+  '/subjects': Icons.menu_book_outlined,
+  '/disciplines': Icons.science_outlined,
+  '/classrooms': Icons.meeting_room_outlined,
+  '/study-weeks': Icons.date_range_outlined,
+  '/execution': Icons.assignment_turned_in_outlined,
 };
 
 const entityDefinitions = <EntityDefinition>[
@@ -44,8 +67,9 @@ const entityDefinitions = <EntityDefinition>[
       EntityField(key: 'name', label: 'Название'),
       EntityField(
         key: 'faculty_id',
-        label: 'ID факультета',
-        type: FieldType.number,
+        label: 'Факультет',
+        type: FieldType.fkSelect,
+        refEndpoint: '/faculties',
       ),
     ],
   ),
@@ -58,8 +82,9 @@ const entityDefinitions = <EntityDefinition>[
       EntityField(key: 'name', label: 'Название'),
       EntityField(
         key: 'speciality_id',
-        label: 'ID специальности',
-        type: FieldType.number,
+        label: 'Специальность',
+        type: FieldType.fkSelect,
+        refEndpoint: '/specialities',
       ),
       EntityField(key: 'course', label: 'Курс', type: FieldType.number),
     ],
@@ -71,7 +96,12 @@ const entityDefinitions = <EntityDefinition>[
     columns: ['fio', 'group_id', 'phone', 'email'],
     fields: [
       EntityField(key: 'fio', label: 'ФИО'),
-      EntityField(key: 'group_id', label: 'ID группы', type: FieldType.number),
+      EntityField(
+        key: 'group_id',
+        label: 'Группа',
+        type: FieldType.fkSelect,
+        refEndpoint: '/groups',
+      ),
       EntityField(key: 'phone', label: 'Телефон', required: false),
       EntityField(key: 'email', label: 'Email', type: FieldType.email),
       EntityField(key: 'address', label: 'Адрес', required: false),
@@ -122,15 +152,23 @@ const entityDefinitions = <EntityDefinition>[
     fields: [
       EntityField(
         key: 'subject_id',
-        label: 'ID предмета',
-        type: FieldType.number,
+        label: 'Предмет',
+        type: FieldType.fkSelect,
+        refEndpoint: '/subjects',
       ),
       EntityField(
         key: 'teacher_id',
-        label: 'ID преподавателя',
-        type: FieldType.number,
+        label: 'Преподаватель',
+        type: FieldType.fkSelect,
+        refEndpoint: '/teachers',
+        refLabelKey: 'fio',
       ),
-      EntityField(key: 'group_id', label: 'ID группы', type: FieldType.number),
+      EntityField(
+        key: 'group_id',
+        label: 'Группа',
+        type: FieldType.fkSelect,
+        refEndpoint: '/groups',
+      ),
       EntityField(
         key: 'lecture_hours',
         label: 'Лекции',
@@ -188,13 +226,17 @@ const entityDefinitions = <EntityDefinition>[
     fields: [
       EntityField(
         key: 'teacher_id',
-        label: 'ID преподавателя',
-        type: FieldType.number,
+        label: 'Преподаватель',
+        type: FieldType.fkSelect,
+        refEndpoint: '/teachers',
+        refLabelKey: 'fio',
       ),
       EntityField(
         key: 'discipline_id',
-        label: 'ID дисциплины',
-        type: FieldType.number,
+        label: 'Дисциплина',
+        type: FieldType.fkSelect,
+        refEndpoint: '/disciplines',
+        refLabelKey: 'displayName',
       ),
       EntityField(key: 'lectures', label: 'Лекции', type: FieldType.number),
       EntityField(key: 'practicals', label: 'Практика', type: FieldType.number),
@@ -207,3 +249,76 @@ const entityDefinitions = <EntityDefinition>[
     ],
   ),
 ];
+
+const scheduleEntityDefinition = EntityDefinition(
+  title: 'Занятие',
+  route: '/schedule-crud',
+  endpoint: '/schedule',
+  columns: [], // We use custom UI for schedule, not EntityListScreen
+  fields: [
+    EntityField(
+      key: 'study_week_id',
+      label: 'Учебная неделя',
+      type: FieldType.fkSelect,
+      refEndpoint: '/study-weeks',
+    ),
+    EntityField(
+      key: 'day_num',
+      label: 'День недели',
+      type: FieldType.select,
+      options: {
+        '1': 'Понедельник',
+        '2': 'Вторник',
+        '3': 'Среда',
+        '4': 'Четверг',
+        '5': 'Пятница',
+        '6': 'Суббота',
+      },
+    ),
+    EntityField(
+      key: 'pair_num',
+      label: 'Пара',
+      type: FieldType.select,
+      options: {
+        '1': '1 пара',
+        '2': '2 пара',
+        '3': '3 пара',
+        '4': '4 пара',
+        '5': '5 пара',
+        '6': '6 пара',
+      },
+    ),
+    EntityField(
+      key: 'subject_id',
+      label: 'Предмет',
+      type: FieldType.fkSelect,
+      refEndpoint: '/subjects',
+    ),
+    EntityField(
+      key: 'teacher_id',
+      label: 'Преподаватель',
+      type: FieldType.fkSelect,
+      refEndpoint: '/teachers',
+      refLabelKey: 'fio',
+    ),
+    EntityField(
+      key: 'lesson_type',
+      label: 'Тип занятия',
+      type: FieldType.select,
+      options: lessonTypes,
+    ),
+    EntityField(
+      key: 'classroom_id',
+      label: 'Аудитория',
+      type: FieldType.fkSelect,
+      refEndpoint: '/classrooms',
+      refLabelKey: 'number',
+    ),
+    EntityField(
+      key: 'group_id',
+      label: 'Группа',
+      type: FieldType.fkSelect,
+      refEndpoint: '/groups',
+    ),
+  ],
+);

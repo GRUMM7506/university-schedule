@@ -12,6 +12,8 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: str
+    username: str = ""
+    student_id: int | None = None
 
 
 class LoginRequest(BaseModel):
@@ -339,11 +341,16 @@ class ScheduleView(BaseModel):
     day_num: int
     pair_num: int
     subject: str
+    subject_id: int
     teacher: str
+    teacher_id: int
     classroom: str
+    classroom_id: int
     lesson_type: int
     group: str
+    group_id: int
     week: str
+    study_week_id: int
 
 
 class FacultyStatistics(BaseModel):

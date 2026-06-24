@@ -231,7 +231,7 @@ class Schedule(Base):
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint("role IN ('Admin', 'Teacher')", name="ck_user_role"),)
+    __table_args__ = (CheckConstraint("role IN ('Admin', 'Teacher', 'Student')", name="ck_user_role"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)

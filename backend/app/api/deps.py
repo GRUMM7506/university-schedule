@@ -36,3 +36,14 @@ def require_staff(user: User = Depends(get_current_user)) -> User:
     if user.role not in {"Admin", "Teacher"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return user
+
+
+def require_any(user: User = Depends(get_current_user)) -> User:
+    """Any authenticated user (Admin, Teacher, Student)."""
+    return user
+
+
+def require_student(user: User = Depends(get_current_user)) -> User:
+    if user.role != "Student":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Student role required")
+    return user

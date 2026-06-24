@@ -49,10 +49,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Используйте учетную запись администратора или преподавателя.',
+                          'Демо-доступ:\n• Админ: admin / admin123\n• Преподаватель: teacher / teacher123\n• Студент: student / student123',
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                         ),
                         const SizedBox(height: 24),
@@ -151,7 +153,9 @@ class _IntroPanel extends StatelessWidget {
             height: 58,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
-              gradient: LinearGradient(colors: [scheme.primary, scheme.secondary]),
+              gradient: LinearGradient(
+                colors: [scheme.primary, scheme.secondary],
+              ),
             ),
             child: const Icon(Icons.auto_stories_outlined, color: Colors.white),
           ),
@@ -176,7 +180,10 @@ class _IntroPanel extends StatelessWidget {
             spacing: 10,
             runSpacing: 10,
             children: const [
-              _FeatureChip(icon: Icons.calendar_month_outlined, label: 'Расписание'),
+              _FeatureChip(
+                icon: Icons.calendar_month_outlined,
+                label: 'Расписание',
+              ),
               _FeatureChip(icon: Icons.fact_check_outlined, label: 'Контроль'),
               _FeatureChip(icon: Icons.table_chart_outlined, label: 'Данные'),
             ],

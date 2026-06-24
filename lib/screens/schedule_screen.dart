@@ -1,8 +1,12 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/entities.dart';
+import '../providers/auth_provider.dart';
 import '../services/academic_service.dart';
+import '../widgets/glass.dart';
+import '../widgets/schedule_form_dialog.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
@@ -11,7 +15,8 @@ class ScheduleScreen extends StatefulWidget {
   State<ScheduleScreen> createState() => _ScheduleScreenState();
 }
 
-class _ScheduleScreenState extends State<ScheduleScreen> {
+class _ScheduleScreenState extends State<ScheduleScreen>
+    with SingleTickerProviderStateMixin {
   int? groupId;
   int? teacherId;
   int? weekId;
@@ -20,15 +25,42 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   List<Map<String, dynamic>> weeks = [];
   List<Map<String, dynamic>> items = [];
   bool loading = true;
+  bool gridMode = true;
+  late TabController _tabController;
+
+  static const _dayNames = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+  static const _dayNamesFull = [
+    '',
+    'Понедельник',
+    'Вторник',
+    'Среда',
+    'Четверг',
+    'Пятница',
+    'Суббота',
+  ];
+
+  static const _pairTimes = {
+    1: '08:00–09:30',
+    2: '09:45–11:15',
+    3: '11:30–13:00',
+    4: '13:45–15:15',
+    5: '15:30–17:00',
+    6: '17:15–18:45',
+  };
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 6, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _loadRefs();
-      }
+      if (mounted) _loadRefs();
     });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadRefs() async {
@@ -36,94 +68,230 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     groups = await service.list('/groups');
     teachers = await service.list('/teachers');
     weeks = await service.list('/study-weeks');
-    if (groups.isNotEmpty) {
-      groupId = groups.first['id'] as int;
-    }
-    if (weeks.isNotEmpty) {
-      weekId = weeks.first['id'] as int;
-    }
+    if (groups.isNotEmpty) groupId = groups.first['id'] as int;
+    if (weeks.isNotEmpty) weekId = weeks.first['id'] as int;
     await _load();
   }
 
   Future<void> _load() async {
     setState(() => loading = true);
     final service = context.read<AcademicService>();
-    items = teacherId != null
+    final result = teacherId != null
         ? await service.teacherSchedule(teacherId!, weekId: weekId)
         : await service.groupSchedule(groupId ?? 0, weekId: weekId);
+    items = result is List<Map<String, dynamic>>
+        ? result
+        : (result as Map<String, dynamic>)['items']
+                  as List<Map<String, dynamic>>? ??
+              [];
     setState(() => loading = false);
+  }
+
+  Future<void> _openForm([Map<String, dynamic>? item]) async {
+    final service = context.read<AcademicService>();
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) =>
+          ScheduleFormDialog(academicService: service, initial: item),
+    );
+    if (payload != null && mounted) {
+      try {
+        await service.saveSchedule(payload, id: item?['id'] as int?);
+        _load();
+      } on DioException catch (e) {
+        final detail = e.response?.data is Map
+            ? e.response?.data['detail']?.toString()
+            : null;
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(detail ?? 'Не удалось сохранить занятие')),
+        );
+      }
+    }
+  }
+
+  Future<void> _delete(int id) async {
+    await context.read<AcademicService>().deleteSchedule(id);
+    _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
+    return Column(
       children: [
-        Text('Расписание', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            _dropdown(
-              'Группа',
-              groupId,
-              groups,
-              (value) => setState(() {
-                groupId = value;
-                teacherId = null;
-              }),
-            ),
-            _dropdown(
-              'Преподаватель',
-              teacherId,
-              teachers,
-              (value) => setState(() {
-                teacherId = value;
-                groupId = null;
-              }),
-            ),
-            _dropdown(
-              'Неделя',
-              weekId,
-              weeks,
-              (value) => setState(() => weekId = value),
-            ),
-            FilledButton.icon(
-              onPressed: _load,
-              icon: const Icon(Icons.filter_alt_outlined),
-              label: const Text('Показать'),
-            ),
-          ],
+        _buildHeader(),
+        Expanded(
+          child: loading
+              ? const Center(child: CircularProgressIndicator())
+              : gridMode
+              ? _buildGridView()
+              : _buildListView(),
         ),
-        const SizedBox(height: 20),
-        if (loading)
-          const Center(child: CircularProgressIndicator())
-        else
-          for (final day in const [1, 2, 3, 4, 5, 6]) _dayBlock(day),
       ],
     );
   }
 
-  Widget _dropdown(
+  Widget _buildHeader() {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      child: GlassPanel(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.calendar_month_outlined,
+                    color: scheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    'Расписание занятий',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                if (context.watch<AuthProvider>().isAdmin)
+                  FilledButton.icon(
+                    onPressed: _openForm,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Добавить'),
+                  ),
+                const SizedBox(width: 12),
+                // View toggle
+                Container(
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest.withValues(alpha: .5),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      _ViewButton(
+                        icon: Icons.grid_view_outlined,
+                        active: gridMode,
+                        onTap: () => setState(() => gridMode = true),
+                      ),
+                      _ViewButton(
+                        icon: Icons.view_list_outlined,
+                        active: !gridMode,
+                        onTap: () => setState(() => gridMode = false),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _buildDropdown(
+                  'Группа',
+                  groupId,
+                  groups,
+                  (v) => setState(() {
+                    groupId = v;
+                    teacherId = null;
+                  }),
+                ),
+                _buildDropdown(
+                  'Преподаватель',
+                  teacherId,
+                  teachers,
+                  (v) => setState(() {
+                    teacherId = v;
+                    groupId = null;
+                  }),
+                  labelKey: 'fio',
+                  width: 260,
+                ),
+                _buildDropdown(
+                  'Неделя',
+                  weekId,
+                  weeks,
+                  (v) => setState(() => weekId = v),
+                ),
+                FilledButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(Icons.search_rounded, size: 18),
+                  label: const Text('Показать'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            // Legend
+            Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              children: lessonTypes.entries.map((e) {
+                final color = lessonTypeColors[int.parse(e.key)] ?? Colors.grey;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(e.value, style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdown(
     String label,
     int? value,
     List<Map<String, dynamic>> data,
-    ValueChanged<int?> onChanged,
-  ) {
+    ValueChanged<int?> onChanged, {
+    String labelKey = 'name',
+    double width = 200,
+  }) {
     return SizedBox(
-      width: 260,
+      width: width,
       child: DropdownButtonFormField<int>(
         initialValue: data.any((e) => e['id'] == value) ? value : null,
+        isExpanded: true,
         decoration: InputDecoration(
           labelText: label,
-          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
+          isDense: true,
         ),
+        menuMaxHeight: 320,
         items: data
             .map(
               (e) => DropdownMenuItem<int>(
                 value: e['id'] as int,
-                child: Text('${e['name'] ?? e['fio']}'),
+                child: Text(
+                  '${e[labelKey] ?? e['name']}',
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             )
             .toList(),
@@ -132,36 +300,606 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  Widget _dayBlock(int day) {
-    final names = [
-      '',
-      'Понедельник',
-      'Вторник',
-      'Среда',
-      'Четверг',
-      'Пятница',
-      'Суббота',
-    ];
-    final dayItems = items.where((e) => e['day_num'] == day).toList();
+  Widget _buildGridView() {
+    if (items.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.event_busy_outlined,
+              size: 64,
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurfaceVariant.withValues(alpha: .4),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Нет занятий на эту неделю',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 700;
+        if (isMobile) {
+          // Split into two 3-day rows for mobile
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              children: [
+                _buildDayRow([1, 2, 3]),
+                const SizedBox(height: 12),
+                _buildDayRow([4, 5, 6]),
+              ],
+            ),
+          );
+        }
+        // Desktop — single row with all 6 days
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: _buildDayRow(List.generate(6, (i) => i + 1)),
+        );
+      },
+    );
+  }
+
+  Widget _buildDayRow(List<int> days) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final day in days)
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(right: day != days.last ? 10 : 0),
+              child: _DayColumn(
+                dayName: _dayNames[day],
+                dayFull: _dayNamesFull[day],
+                items: items.where((e) => e['day_num'] == day).toList(),
+                pairTimes: _pairTimes,
+                onEdit: context.read<AuthProvider>().isAdmin ? _openForm : null,
+                onDelete: context.read<AuthProvider>().isAdmin ? _delete : null,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildListView() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      children: [
+        for (int day = 1; day <= 6; day++)
+          _DayListBlock(
+            dayName: _dayNamesFull[day],
+            items: items.where((e) => e['day_num'] == day).toList(),
+            pairTimes: _pairTimes,
+            onEdit: context.read<AuthProvider>().isAdmin ? _openForm : null,
+            onDelete: context.read<AuthProvider>().isAdmin ? _delete : null,
+          ),
+      ],
+    );
+  }
+}
+
+// ─── Grid Day Column ──────────────────────────────────────────────────────────
+
+class _DayColumn extends StatelessWidget {
+  const _DayColumn({
+    required this.dayName,
+    required this.dayFull,
+    required this.items,
+    required this.pairTimes,
+    this.onEdit,
+    this.onDelete,
+  });
+
+  final String dayName;
+  final String dayFull;
+  final List<Map<String, dynamic>> items;
+  final Map<int, String> pairTimes;
+  final void Function(Map<String, dynamic> item)? onEdit;
+  final void Function(int id)? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isToday = _isCurrentDayOfWeek(dayName);
+
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isToday
+                ? scheme.primary.withValues(alpha: .15)
+                : scheme.surfaceContainerHighest.withValues(alpha: .3),
+            borderRadius: BorderRadius.circular(12),
+            border: isToday
+                ? Border.all(color: scheme.primary.withValues(alpha: .4))
+                : null,
+          ),
+          child: Column(
+            children: [
+              Text(
+                dayName,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                  color: isToday ? scheme.primary : scheme.onSurface,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              if (isToday)
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: .2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: .3),
+                  style: BorderStyle.values[1],
+                ),
+              ),
+              child: Text(
+                'Нет\nзанятий',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: scheme.onSurfaceVariant.withValues(alpha: .5),
+                ),
+              ),
+            ),
+          )
+        else
+          ...items.map(
+            (item) => _LessonCard(
+              item: item,
+              pairTimes: pairTimes,
+              onEdit: onEdit != null ? () => onEdit!(item) : null,
+              onDelete: onDelete != null
+                  ? () => onDelete!(item['id'] as int)
+                  : null,
+            ),
+          ),
+      ],
+    );
+  }
+
+  bool _isCurrentDayOfWeek(String short) {
+    final now = DateTime.now();
+    final dayOfWeek = now.weekday; // 1=Mon..6=Sat
+    const map = {'Пн': 1, 'Вт': 2, 'Ср': 3, 'Чт': 4, 'Пт': 5, 'Сб': 6};
+    return map[short] == dayOfWeek;
+  }
+}
+
+class _LessonCard extends StatelessWidget {
+  const _LessonCard({
+    required this.item,
+    required this.pairTimes,
+    this.onEdit,
+    this.onDelete,
+  });
+
+  final Map<String, dynamic> item;
+  final Map<int, String> pairTimes;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final lessonType = item['lesson_type'] as int? ?? 0;
+    final color = lessonTypeColors[lessonType] ?? Colors.grey;
+    final pairNum = item['pair_num'] as int? ?? 1;
+    final time = pairTimes[pairNum] ?? '';
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GlassPanel(
+        padding: const EdgeInsets.all(10),
+        borderRadius: 12,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${item['subject']}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '${lessonTypes['$lessonType']}',
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (onEdit != null)
+                  PopupMenuButton<String>(
+                    icon: Icon(
+                      Icons.more_vert,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    padding: EdgeInsets.zero,
+                    onSelected: (v) {
+                      if (v == 'edit') onEdit!();
+                      if (v == 'delete') onDelete!();
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Text('Изменить'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text(
+                          'Удалить',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            _InfoRow(Icons.access_time_outlined, time),
+            _InfoRow(Icons.person_outline, '${item['teacher']}'),
+            _InfoRow(Icons.meeting_room_outlined, 'ауд. ${item['classroom']}'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow(this.icon, this.text);
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 10,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 3),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 10,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── List Day Block ───────────────────────────────────────────────────────────
+
+class _DayListBlock extends StatelessWidget {
+  const _DayListBlock({
+    required this.dayName,
+    required this.items,
+    required this.pairTimes,
+    this.onEdit,
+    this.onDelete,
+  });
+
+  final String dayName;
+  final List<Map<String, dynamic>> items;
+  final Map<int, String> pairTimes;
+  final void Function(Map<String, dynamic> item)? onEdit;
+  final void Function(int id)? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(names[day], style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          if (dayItems.isEmpty)
-            const Text('Нет занятий')
-          else
-            for (final item in dayItems)
-              ListTile(
-                leading: CircleAvatar(child: Text('${item['pair_num']}')),
-                title: Text('${item['subject']}'),
-                subtitle: Text(
-                  '${item['teacher']} | ауд. ${item['classroom']} | ${lessonTypes['${item['lesson_type']}']}',
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  dayName,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${items.length} занят.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...items.map(
+            (item) => _ListLessonCard(
+              item: item,
+              pairTimes: pairTimes,
+              onEdit: onEdit != null ? () => onEdit!(item) : null,
+              onDelete: onDelete != null
+                  ? () => onDelete!(item['id'] as int)
+                  : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ListLessonCard extends StatelessWidget {
+  const _ListLessonCard({
+    required this.item,
+    required this.pairTimes,
+    this.onEdit,
+    this.onDelete,
+  });
+
+  final Map<String, dynamic> item;
+  final Map<int, String> pairTimes;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final lessonType = item['lesson_type'] as int? ?? 0;
+    final color = lessonTypeColors[lessonType] ?? Colors.grey;
+    final pairNum = item['pair_num'] as int? ?? 1;
+    final time = pairTimes[pairNum] ?? '';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GlassPanel(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '$pairNum',
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
+                    ),
+                  ),
+                  Text('пара', style: TextStyle(color: color, fontSize: 9)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            Container(
+              width: 4,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${item['subject']}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 10,
+                    children: [
+                      _Chip(Icons.access_time_outlined, time, color),
+                      _Chip(
+                        Icons.person_outline,
+                        '${item['teacher']}',
+                        Colors.grey,
+                      ),
+                      _Chip(
+                        Icons.meeting_room_outlined,
+                        'ауд. ${item['classroom']}',
+                        Colors.grey,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                lessonTypes['$lessonType'] ?? '',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-        ],
+            ),
+            if (onEdit != null)
+              PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.more_vert,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                onSelected: (v) {
+                  if (v == 'edit') onEdit!();
+                  if (v == 'delete') onDelete!();
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'edit', child: Text('Изменить')),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Удалить', style: TextStyle(color: Colors.red)),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip(this.icon, this.label, this.color);
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color.withValues(alpha: .7)),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ViewButton extends StatelessWidget {
+  const _ViewButton({
+    required this.icon,
+    required this.active,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: active
+              ? scheme.primary.withValues(alpha: .15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: active ? scheme.primary : scheme.onSurfaceVariant,
+        ),
       ),
     );
   }

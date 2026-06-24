@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import 'providers/auth_provider.dart';
 import 'routes/app_router.dart';
-import 'services/academic_service.dart';
 import 'services/api_client.dart';
 import 'services/auth_service.dart';
 import 'theme/app_theme.dart';
@@ -36,7 +35,6 @@ class _UniversityAppState extends State<UniversityApp> {
     return MultiProvider(
       providers: [
         Provider.value(value: apiClient),
-        Provider(create: (_) => AcademicService(apiClient)),
         ChangeNotifierProvider.value(value: authProvider),
       ],
       child: MaterialApp.router(

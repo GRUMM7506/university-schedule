@@ -83,7 +83,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
               'Дисциплина',
               disciplineId,
               disciplines,
-              'id',
+              'displayName',
               (v) => setState(() => disciplineId = v),
             ),
             _dropdown(
@@ -96,11 +96,9 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
             SizedBox(
               width: 180,
               child: DropdownButtonFormField<int>(
-                initialValue: controlType,
-                decoration: const InputDecoration(
-                  labelText: 'Контроль',
-                  border: OutlineInputBorder(),
-                ),
+                value: controlType,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Контроль'),
                 items: const [
                   DropdownMenuItem(value: 0, child: Text('Зачет')),
                   DropdownMenuItem(value: 1, child: Text('Экзамен')),
@@ -109,13 +107,11 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
               ),
             ),
             SizedBox(
-              width: 160,
+              width: 120,
               child: DropdownButtonFormField<int>(
-                initialValue: tourNum,
-                decoration: const InputDecoration(
-                  labelText: 'Тур',
-                  border: OutlineInputBorder(),
-                ),
+                value: tourNum,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Тур'),
                 items: [1, 2, 3, 4]
                     .map((e) => DropdownMenuItem(value: e, child: Text('$e')))
                     .toList(),
@@ -158,19 +154,19 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
     ValueChanged<int?> onChanged,
   ) {
     return SizedBox(
-      width: 280,
+      width: 260,
       child: DropdownButtonFormField<int>(
-        initialValue: data.any((e) => e['id'] == value) ? value : null,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-        ),
+        value: data.any((e) => e['id'] == value) ? value : null,
+        isExpanded: true,
+        menuMaxHeight: 320,
+        decoration: InputDecoration(labelText: label),
         items: data
             .map(
               (e) => DropdownMenuItem<int>(
                 value: e['id'] as int,
                 child: Text(
                   display == 'id' ? 'Дисциплина #${e['id']}' : '${e[display]}',
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             )
