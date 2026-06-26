@@ -361,7 +361,7 @@ class _UserDialogState extends State<_UserDialog> {
             ),
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
-              value: _role,
+              initialValue: _role,
               decoration: const InputDecoration(
                 labelText: 'Роль',
                 prefixIcon: Icon(Icons.badge_outlined),
@@ -389,8 +389,9 @@ class _UserDialogState extends State<_UserDialog> {
           onPressed: () {
             final payload = <String, String>{'role': _role};
             if (!isEdit) payload['username'] = _usernameCtrl.text.trim();
-            if (_passwordCtrl.text.isNotEmpty)
+            if (_passwordCtrl.text.isNotEmpty) {
               payload['password'] = _passwordCtrl.text;
+            }
             Navigator.pop(context, payload);
           },
           icon: const Icon(Icons.save_outlined),

@@ -1,4 +1,5 @@
 import 'package:data_table_2/data_table_2.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -55,7 +56,11 @@ class _EntityListScreenState extends State<EntityListScreen> {
         for (final item in data) {
           final id = item['id'] as int?;
           if (id != null) {
-            final labelVal = item[field.refLabelKey] ?? item['displayName'] ?? item['name'] ?? '#$id';
+            final labelVal =
+                item[field.refLabelKey] ??
+                item['displayName'] ??
+                item['name'] ??
+                '#$id';
             map[id] = '$labelVal';
           }
         }
@@ -179,7 +184,9 @@ class _EntityListScreenState extends State<EntityListScreen> {
                                 DataCell(
                                   Text(
                                     _renderCellValue(column, item[column]),
-                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                               DataCell(
@@ -233,7 +240,33 @@ class _EntityListScreenState extends State<EntityListScreen> {
       ),
     );
     if (payload != null && context.mounted) {
-      await context.read<EntityProvider>().save(payload, id: item?.id);
+      try {
+        await context.read<EntityProvider>().save(payload, id: item?.id);
+      } on DioException catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_dioErrorMessage(e))));
+      }
     }
+  }
+
+  String _dioErrorMessage(DioException e) {
+    final data = e.response?.data;
+    if (data is Map && data['detail'] is List) {
+      final firstError = (data['detail'] as List).firstOrNull;
+      if (firstError is Map) {
+        final location = firstError['loc'] is List
+            ? (firstError['loc'] as List).skip(1).join('.')
+            : null;
+        final message = firstError['msg']?.toString();
+        if (location != null && location.isNotEmpty && message != null) {
+          return '$location: $message';
+        }
+        if (message != null) return message;
+      }
+    }
+    if (data is Map && data['detail'] != null) return '${data['detail']}';
+    return 'Не удалось сохранить запись';
   }
 }

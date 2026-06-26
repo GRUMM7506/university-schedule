@@ -17,10 +17,14 @@ class ScheduleScreen extends StatefulWidget {
 
 class _ScheduleScreenState extends State<ScheduleScreen>
     with SingleTickerProviderStateMixin {
-  int? groupId;
+  int? facultyId;
+  int? specialityId;
+  int? course;
   int? teacherId;
   int? weekId;
   List<Map<String, dynamic>> groups = [];
+  List<Map<String, dynamic>> faculties = [];
+  List<Map<String, dynamic>> specialities = [];
   List<Map<String, dynamic>> teachers = [];
   List<Map<String, dynamic>> weeks = [];
   List<Map<String, dynamic>> items = [];
@@ -66,9 +70,18 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   Future<void> _loadRefs() async {
     final service = context.read<AcademicService>();
     groups = await service.list('/groups');
+    faculties = await service.list('/faculties');
+    specialities = await service.list('/specialities');
     teachers = await service.list('/teachers');
     weeks = await service.list('/study-weeks');
-    if (groups.isNotEmpty) groupId = groups.first['id'] as int;
+    if (groups.isNotEmpty) {
+      final firstGroup = groups.first;
+      specialityId = _readInt(firstGroup['speciality_id']);
+      course = _readInt(firstGroup['course']);
+      facultyId = _facultyIdForSpeciality(specialityId);
+    } else if (faculties.isNotEmpty) {
+      facultyId = _readInt(faculties.first['id']);
+    }
     if (weeks.isNotEmpty) weekId = weeks.first['id'] as int;
     await _load();
   }
@@ -76,15 +89,88 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   Future<void> _load() async {
     setState(() => loading = true);
     final service = context.read<AcademicService>();
-    final result = teacherId != null
-        ? await service.teacherSchedule(teacherId!, weekId: weekId)
-        : await service.groupSchedule(groupId ?? 0, weekId: weekId);
-    items = result is List<Map<String, dynamic>>
-        ? result
-        : (result as Map<String, dynamic>)['items']
-                  as List<Map<String, dynamic>>? ??
-              [];
+    if (teacherId != null) {
+      items = await service.teacherSchedule(teacherId!, weekId: weekId);
+    } else {
+      final selectedGroups = _filteredGroups;
+      if (selectedGroups.isEmpty) {
+        items = [];
+      } else {
+        final schedules = await Future.wait(
+          selectedGroups.map((group) async {
+            final result = await service.groupSchedule(
+              _readInt(group['id']) ?? 0,
+              weekId: weekId,
+            );
+            final groupItems =
+                result['items'] as List<Map<String, dynamic>>? ?? [];
+            return groupItems
+                .map(
+                  (item) => {
+                    ...item,
+                    'group_name': item['group_name'] ?? group['name'],
+                  },
+                )
+                .toList();
+          }),
+        );
+        items = schedules.expand((groupItems) => groupItems).toList();
+      }
+    }
     setState(() => loading = false);
+  }
+
+  List<Map<String, dynamic>> get _filteredSpecialities {
+    if (facultyId == null) return specialities;
+    return specialities
+        .where((s) => _readInt(s['faculty_id']) == facultyId)
+        .toList();
+  }
+
+  List<Map<String, dynamic>> get _filteredGroups {
+    return groups.where((group) {
+      final groupSpecialityId = _readInt(group['speciality_id']);
+      final groupFacultyId = _facultyIdForSpeciality(groupSpecialityId);
+      final groupCourse = _readInt(group['course']);
+      return (facultyId == null || groupFacultyId == facultyId) &&
+          (specialityId == null || groupSpecialityId == specialityId) &&
+          (course == null || groupCourse == course);
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> get _courseOptions {
+    final courses =
+        groups
+            .where((group) {
+              final groupSpecialityId = _readInt(group['speciality_id']);
+              final groupFacultyId = _facultyIdForSpeciality(groupSpecialityId);
+              return (facultyId == null || groupFacultyId == facultyId) &&
+                  (specialityId == null || groupSpecialityId == specialityId);
+            })
+            .map((group) => _readInt(group['course']))
+            .whereType<int>()
+            .toSet()
+            .toList()
+          ..sort();
+    return courses
+        .map((value) => {'id': value, 'name': '$value курс'})
+        .toList();
+  }
+
+  int? _facultyIdForSpeciality(int? specialityId) {
+    if (specialityId == null) return null;
+    for (final speciality in specialities) {
+      if (_readInt(speciality['id']) == specialityId) {
+        return _readInt(speciality['faculty_id']);
+      }
+    }
+    return null;
+  }
+
+  int? _readInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value');
   }
 
   Future<void> _openForm([Map<String, dynamic>? item]) async {
@@ -200,13 +286,48 @@ class _ScheduleScreenState extends State<ScheduleScreen>
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _buildDropdown(
-                  'Группа',
-                  groupId,
-                  groups,
+                  'Факультет',
+                  facultyId,
+                  faculties,
                   (v) => setState(() {
-                    groupId = v;
+                    facultyId = v;
+                    if (!_filteredSpecialities.any(
+                      (s) => _readInt(s['id']) == specialityId,
+                    )) {
+                      specialityId = null;
+                    }
+                    if (!_courseOptions.any((c) => c['id'] == course)) {
+                      course = null;
+                    }
                     teacherId = null;
                   }),
+                  allLabel: 'Все факультеты',
+                  width: 240,
+                ),
+                _buildDropdown(
+                  'Направление',
+                  specialityId,
+                  _filteredSpecialities,
+                  (v) => setState(() {
+                    specialityId = v;
+                    if (!_courseOptions.any((c) => c['id'] == course)) {
+                      course = null;
+                    }
+                    teacherId = null;
+                  }),
+                  allLabel: 'Все направления',
+                  width: 260,
+                ),
+                _buildDropdown(
+                  'Курс',
+                  course,
+                  _courseOptions,
+                  (v) => setState(() {
+                    course = v;
+                    teacherId = null;
+                  }),
+                  allLabel: 'Все курсы',
+                  width: 160,
                 ),
                 _buildDropdown(
                   'Преподаватель',
@@ -214,8 +335,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                   teachers,
                   (v) => setState(() {
                     teacherId = v;
-                    groupId = null;
                   }),
+                  allLabel: 'Все преподаватели',
                   labelKey: 'fio',
                   width: 260,
                 ),
@@ -269,6 +390,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     ValueChanged<int?> onChanged, {
     String labelKey = 'name',
     double width = 200,
+    String? allLabel,
   }) {
     return SizedBox(
       width: width,
@@ -284,47 +406,36 @@ class _ScheduleScreenState extends State<ScheduleScreen>
           isDense: true,
         ),
         menuMaxHeight: 320,
-        items: data
-            .map(
-              (e) => DropdownMenuItem<int>(
-                value: e['id'] as int,
-                child: Text(
-                  '${e[labelKey] ?? e['name']}',
-                  overflow: TextOverflow.ellipsis,
-                ),
+        items: [
+          if (allLabel != null)
+            DropdownMenuItem<int>(value: null, child: Text(allLabel)),
+          ...data.map(
+            (e) => DropdownMenuItem<int>(
+              value: _readInt(e['id']),
+              child: Text(
+                '${e[labelKey] ?? e['name']}',
+                overflow: TextOverflow.ellipsis,
               ),
-            )
-            .toList(),
+            ),
+          ),
+        ],
+        selectedItemBuilder: allLabel == null
+            ? null
+            : (_) => [
+                Text(allLabel, overflow: TextOverflow.ellipsis),
+                ...data.map(
+                  (e) => Text(
+                    '${e[labelKey] ?? e['name']}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
         onChanged: onChanged,
       ),
     );
   }
 
   Widget _buildGridView() {
-    if (items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.event_busy_outlined,
-              size: 64,
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurfaceVariant.withValues(alpha: .4),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Нет занятий на эту неделю',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 700;
@@ -412,6 +523,10 @@ class _DayColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isToday = _isCurrentDayOfWeek(dayName);
+    final maxPair = items.fold<int>(0, (max, item) {
+      final pairNum = item['pair_num'] as int? ?? 0;
+      return pairNum > max ? pairNum : max;
+    });
 
     return Column(
       children: [
@@ -466,7 +581,7 @@ class _DayColumn extends StatelessWidget {
                 ),
               ),
               child: Text(
-                'Нет\nзанятий',
+                'Нет\nпар',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 11,
@@ -476,18 +591,29 @@ class _DayColumn extends StatelessWidget {
             ),
           )
         else
-          ...items.map(
-            (item) => _LessonCard(
-              item: item,
-              pairTimes: pairTimes,
-              onEdit: onEdit != null ? () => onEdit!(item) : null,
-              onDelete: onDelete != null
-                  ? () => onDelete!(item['id'] as int)
-                  : null,
-            ),
-          ),
+          for (int pair = 1; pair <= maxPair; pair++) ..._buildPairSlots(pair),
       ],
     );
+  }
+
+  List<Widget> _buildPairSlots(int pair) {
+    final pairItems = items.where((e) => e['pair_num'] == pair).toList();
+    if (pairItems.isEmpty) {
+      return [_EmptyPairSlot(pairNum: pair, pairTimes: pairTimes)];
+    }
+
+    return pairItems
+        .map(
+          (item) => _LessonCard(
+            item: item,
+            pairTimes: pairTimes,
+            onEdit: onEdit != null ? () => onEdit!(item) : null,
+            onDelete: onDelete != null
+                ? () => onDelete!(item['id'] as int)
+                : null,
+          ),
+        )
+        .toList();
   }
 
   bool _isCurrentDayOfWeek(String short) {
@@ -495,6 +621,53 @@ class _DayColumn extends StatelessWidget {
     final dayOfWeek = now.weekday; // 1=Mon..6=Sat
     const map = {'Пн': 1, 'Вт': 2, 'Ср': 3, 'Чт': 4, 'Пт': 5, 'Сб': 6};
     return map[short] == dayOfWeek;
+  }
+}
+
+class _EmptyPairSlot extends StatelessWidget {
+  const _EmptyPairSlot({required this.pairNum, required this.pairTimes});
+
+  final int pairNum;
+  final Map<int, String> pairTimes;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: .16),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: .45),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$pairNum пара',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${pairTimes[pairNum] ?? ''} · пусто',
+              style: TextStyle(
+                fontSize: 10,
+                color: scheme.onSurfaceVariant.withValues(alpha: .65),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -517,6 +690,7 @@ class _LessonCard extends StatelessWidget {
     final color = lessonTypeColors[lessonType] ?? Colors.grey;
     final pairNum = item['pair_num'] as int? ?? 1;
     final time = pairTimes[pairNum] ?? '';
+    final groupName = item['group_name'] ?? item['group'];
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -591,6 +765,8 @@ class _LessonCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             _InfoRow(Icons.access_time_outlined, time),
+            if (groupName != null)
+              _InfoRow(Icons.groups_outlined, '$groupName'),
             _InfoRow(Icons.person_outline, '${item['teacher']}'),
             _InfoRow(Icons.meeting_room_outlined, 'ауд. ${item['classroom']}'),
           ],
@@ -652,7 +828,11 @@ class _DayListBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) return const SizedBox.shrink();
+    final maxPair = items.fold<int>(0, (max, item) {
+      final pairNum = item['pair_num'] as int? ?? 0;
+      return pairNum > max ? pairNum : max;
+    });
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
       child: Column(
@@ -690,7 +870,7 @@ class _DayListBlock extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '${items.length} занят.',
+                    items.isEmpty ? 'нет пар' : '${items.length} занят.',
                     style: TextStyle(
                       fontSize: 11,
                       color: Theme.of(context).colorScheme.primary,
@@ -701,17 +881,138 @@ class _DayListBlock extends StatelessWidget {
               ],
             ),
           ),
-          ...items.map(
-            (item) => _ListLessonCard(
-              item: item,
-              pairTimes: pairTimes,
-              onEdit: onEdit != null ? () => onEdit!(item) : null,
-              onDelete: onDelete != null
-                  ? () => onDelete!(item['id'] as int)
-                  : null,
-            ),
-          ),
+          if (items.isEmpty)
+            const _ListEmptyDayCard()
+          else
+            for (int pair = 1; pair <= maxPair; pair++) ..._buildPairRows(pair),
         ],
+      ),
+    );
+  }
+
+  List<Widget> _buildPairRows(int pair) {
+    final pairItems = items.where((e) => e['pair_num'] == pair).toList();
+    if (pairItems.isEmpty) {
+      return [_ListEmptyPairCard(pairNum: pair, pairTimes: pairTimes)];
+    }
+
+    return pairItems
+        .map(
+          (item) => _ListLessonCard(
+            item: item,
+            pairTimes: pairTimes,
+            onEdit: onEdit != null ? () => onEdit!(item) : null,
+            onDelete: onDelete != null
+                ? () => onDelete!(item['id'] as int)
+                : null,
+          ),
+        )
+        .toList();
+  }
+}
+
+class _ListEmptyDayCard extends StatelessWidget {
+  const _ListEmptyDayCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: .16),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: .45)),
+      ),
+      child: Text(
+        'В этот день пар нет',
+        style: TextStyle(
+          color: scheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _ListEmptyPairCard extends StatelessWidget {
+  const _ListEmptyPairCard({required this.pairNum, required this.pairTimes});
+
+  final int pairNum;
+  final Map<int, String> pairTimes;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: .45),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: .45),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '$pairNum',
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
+                    ),
+                  ),
+                  Text(
+                    'пара',
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 9,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Пусто',
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    pairTimes[pairNum] ?? '',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant.withValues(alpha: .75),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -736,6 +1037,7 @@ class _ListLessonCard extends StatelessWidget {
     final color = lessonTypeColors[lessonType] ?? Colors.grey;
     final pairNum = item['pair_num'] as int? ?? 1;
     final time = pairTimes[pairNum] ?? '';
+    final groupName = item['group_name'] ?? item['group'];
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -791,6 +1093,8 @@ class _ListLessonCard extends StatelessWidget {
                     spacing: 10,
                     children: [
                       _Chip(Icons.access_time_outlined, time, color),
+                      if (groupName != null)
+                        _Chip(Icons.groups_outlined, '$groupName', Colors.grey),
                       _Chip(
                         Icons.person_outline,
                         '${item['teacher']}',

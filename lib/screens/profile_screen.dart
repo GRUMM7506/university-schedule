@@ -51,7 +51,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final scheme = Theme.of(context).colorScheme;
 
     return ListView(
       padding: const EdgeInsets.all(24),

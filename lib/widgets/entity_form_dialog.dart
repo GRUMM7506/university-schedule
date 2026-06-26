@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../models/entity_model.dart';
 import '../services/academic_service.dart';
@@ -25,6 +26,7 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
   // Selected int values for fkSelect fields
   final Map<String, int?> fkValues = {};
   // Loaded reference data for fkSelect fields
+  final Map<String, List<Map<String, dynamic>>> allFkOptions = {};
   final Map<String, List<Map<String, dynamic>>> fkOptions = {};
   bool loadingRefs = false;
 
@@ -57,12 +59,22 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
     for (final field in fkFields) {
       try {
         final data = await widget.academicService.list(field.refEndpoint!);
+        allFkOptions[field.key] = data;
         fkOptions[field.key] = data;
       } catch (_) {
+        allFkOptions[field.key] = [];
         fkOptions[field.key] = [];
       }
     }
-    if (mounted) setState(() => loadingRefs = false);
+    if (mounted) {
+      for (final field in widget.definition.fields) {
+        _applyFilter(field);
+      }
+    }
+
+    setState(() {
+      loadingRefs = false;
+    });
   }
 
   @override
@@ -71,6 +83,47 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  void _applyFilter(EntityField field) {
+  if (field.dependsOn.isEmpty) {
+    fkOptions[field.key] = allFkOptions[field.key] ?? [];
+    return;
+  }
+
+  final source = allFkOptions[field.key] ?? [];
+
+  fkOptions[field.key] = source.where((item) {
+    for (final parent in field.dependsOn) {
+      final selected = fkValues[parent];
+
+      if (selected != null && item[parent] != selected) {
+        return false;
+      }
+    }
+
+    return true;
+  }).toList();
+}
+
+  void _updateChildren(String parentKey) {
+    for (final field in widget.definition.fields) {
+      if (!field.dependsOn.contains(parentKey)) continue;
+
+      _applyFilter(field);
+
+      final list = fkOptions[field.key]!;
+
+      if (list.isEmpty) {
+        fkValues[field.key] = null;
+      } else {
+        if (!list.any((e) => e['id'] == fkValues[field.key])) {
+  fkValues[field.key] = list.isEmpty ? null : list.first['id'];
+}
+      }
+
+      _updateChildren(field.key);
+    }
   }
 
   @override
@@ -115,6 +168,21 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
     );
   }
 
+  Future<void> _pickDate(EntityField field) async {
+    final now = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: DateTime(now.year - 18, now.month, now.day),
+      firstDate: DateTime(1950),
+      lastDate: now,
+    );
+    if (selected != null) {
+      setState(() {
+        controllers[field.key]!.text = DateFormat('dd.MM.yyyy').format(selected);
+      });
+    }
+  }
+
   Widget _field(EntityField field, ColorScheme scheme) {
     if (field.type == FieldType.fkSelect) {
       final options = fkOptions[field.key] ?? [];
@@ -125,7 +193,7 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
           : null;
 
       return DropdownButtonFormField<int>(
-        value: validVal,
+        initialValue: validVal,
         isExpanded: true,
         decoration: InputDecoration(
           labelText: field.label,
@@ -173,7 +241,12 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
             ),
           );
         }).toList(),
-        onChanged: (v) => setState(() => fkValues[field.key] = v),
+        onChanged: (v) {
+          setState(() {
+            fkValues[field.key] = v;
+            _updateChildren(field.key);
+          });
+        },
         validator: (v) =>
             field.required && v == null ? 'Выберите значение' : null,
       );
@@ -181,7 +254,7 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
 
     if (field.type == FieldType.select) {
       return DropdownButtonFormField<String>(
-        value: controllers[field.key]!.text.isEmpty
+        initialValue: controllers[field.key]!.text.isEmpty
             ? null
             : controllers[field.key]!.text,
         isExpanded: true,
@@ -197,6 +270,43 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
       );
     }
 
+    if (field.type == FieldType.date) {
+      return Row(
+        children: [
+          Expanded(
+            child: TextFormField(
+              controller: controllers[field.key],
+              decoration: InputDecoration(
+                labelText: field.label,
+                hintText: 'дд.мм.гггг',
+              ),
+              keyboardType: TextInputType.datetime,
+              validator: (value) {
+                final text = value?.trim() ?? '';
+                if (field.required && text.isEmpty) return 'Заполните поле';
+                if (text.isNotEmpty) {
+                  try {
+                    if (field.type == FieldType.date) {
+                      DateFormat('dd.MM.yyyy').parseStrict(text);
+                    }
+                    return null;
+                  } catch (_) {
+                    return 'Формат даты: дд.мм.гггг';
+                  }
+                }
+                return null;
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+          OutlinedButton(
+            onPressed: () => _pickDate(field),
+            child: const Icon(Icons.calendar_today_outlined),
+          ),
+        ],
+      );
+    }
+
     return TextFormField(
       controller: controllers[field.key],
       decoration: InputDecoration(labelText: field.label),
@@ -205,11 +315,28 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
         FieldType.email => TextInputType.emailAddress,
         _ => TextInputType.text,
       },
-      validator: (value) =>
-          field.required && (value == null || value.trim().isEmpty)
-          ? 'Заполните поле'
-          : null,
+      validator: (value) => _validateTextField(field, value),
     );
+  }
+
+  String? _validateTextField(EntityField field, String? value) {
+    final text = value?.trim() ?? '';
+    if (field.required && text.isEmpty) return 'Заполните поле';
+    if (field.type == FieldType.email && text.isNotEmpty) {
+      final emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+      if (!emailPattern.hasMatch(text)) {
+        return 'Введите корректный email';
+      }
+    }
+    if (field.type == FieldType.date && text.isNotEmpty) {
+      try {
+        DateFormat('dd.MM.yyyy').parseStrict(text);
+        return null;
+      } catch (_) {
+        return 'Формат даты: дд.мм.гггг';
+      }
+    }
+    return null;
   }
 
   void _submit() {
@@ -222,11 +349,22 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
         final value = controllers[field.key]!.text.trim();
         if (value.isEmpty && !field.required) {
           payload[field.key] = null;
-        } else if (field.type == FieldType.number ||
-            field.type == FieldType.select && int.tryParse(value) != null) {
+        } else if (field.type == FieldType.number) {
+          payload[field.key] = int.parse(value);
+        } else if (field.type == FieldType.select && int.tryParse(value) != null) {
           payload[field.key] = int.parse(value);
         } else {
-          payload[field.key] = value;
+          // date and other string types
+          if (field.type == FieldType.date) {
+            final date = DateFormat('dd.MM.yyyy').parseStrict(value);
+            payload[field.key] = DateFormat('yyyy-MM-dd').format(date);
+          }
+          else if (field.type == FieldType.number) {
+            payload[field.key] = int.parse(value);
+          }
+          else {
+            payload[field.key] = value;
+          }
         }
       }
     }

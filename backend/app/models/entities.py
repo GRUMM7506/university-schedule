@@ -94,7 +94,7 @@ class Subject(Base):
 class StudentGroup(Base):
     __tablename__ = "student_groups"
     __table_args__ = (
-        CheckConstraint("course BETWEEN 1 AND 6", name="ck_group_course"),
+        CheckConstraint("course BETWEEN 1 AND 4", name="ck_group_course"),
         UniqueConstraint("speciality_id", "name", name="uq_group_speciality_name"),
     )
 
@@ -114,10 +114,10 @@ class Teacher(Base):
     fio: Mapped[str] = mapped_column(String(180), nullable=False, index=True)
     scientific_degree: Mapped[str | None] = mapped_column(String(120))
     academic_title: Mapped[str | None] = mapped_column(String(120))
-    position: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    position: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(40))
     address: Mapped[str | None] = mapped_column(String(240))
-    email: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
 
 
 class Student(Base):
@@ -128,7 +128,7 @@ class Student(Base):
     group_id: Mapped[int] = mapped_column(ForeignKey("student_groups.id", ondelete="RESTRICT"), nullable=False, index=True)
     phone: Mapped[str | None] = mapped_column(String(40))
     address: Mapped[str | None] = mapped_column(String(240))
-    email: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     birth_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     group: Mapped[StudentGroup] = relationship(back_populates="students")

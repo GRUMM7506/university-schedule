@@ -21,6 +21,8 @@ class _ScheduleFormDialogState extends State<ScheduleFormDialog> {
   final _formKey = GlobalKey<FormState>();
   bool _loading = true;
   List<Map<String, dynamic>> _weeks = [];
+  List<Map<String, dynamic>> _faculties = [];
+  List<Map<String, dynamic>> _specialities = [];
   List<Map<String, dynamic>> _groups = [];
   List<Map<String, dynamic>> _subjects = [];
   List<Map<String, dynamic>> _teachers = [];
@@ -30,6 +32,9 @@ class _ScheduleFormDialogState extends State<ScheduleFormDialog> {
   int? _weekId;
   int? _dayNum;
   int? _pairNum;
+  int? _facultyId;
+  int? _specialityId;
+  int? _course;
   int? _groupId;
   int? _subjectId;
   int? _teacherId;
@@ -46,6 +51,8 @@ class _ScheduleFormDialogState extends State<ScheduleFormDialog> {
     final initial = widget.initial;
     final results = await Future.wait([
       widget.academicService.list('/study-weeks'),
+      widget.academicService.list('/faculties'),
+      widget.academicService.list('/specialities'),
       widget.academicService.list('/groups'),
       widget.academicService.list('/subjects'),
       widget.academicService.list('/teachers'),
@@ -55,15 +62,20 @@ class _ScheduleFormDialogState extends State<ScheduleFormDialog> {
     if (!mounted) return;
     setState(() {
       _weeks = results[0];
-      _groups = results[1];
-      _subjects = results[2];
-      _teachers = results[3];
-      _classrooms = results[4];
-      _disciplines = results[5];
+      _faculties = results[1];
+      _specialities = results[2];
+      _groups = results[3];
+      _subjects = results[4];
+      _teachers = results[5];
+      _classrooms = results[6];
+      _disciplines = results[7];
       _weekId = _readInt(initial, 'study_week_id') ?? _firstId(_weeks);
       _dayNum = _readInt(initial, 'day_num') ?? 1;
       _pairNum = _readInt(initial, 'pair_num') ?? 1;
-      _groupId = _readInt(initial, 'group_id') ?? _firstId(_groups);
+      _facultyId = _readInt(initial, 'faculty_id') ?? _firstId(_faculties);
+      _specialityId = _readInt(initial, 'speciality_id');
+      _course = _readInt(initial, 'course');
+      _groupId = _readInt(initial, 'group_id');
       _subjectId = _readInt(initial, 'subject_id');
       _teacherId = _readInt(initial, 'teacher_id');
       _lessonType = _readInt(initial, 'lesson_type') ?? 0;
@@ -71,6 +83,22 @@ class _ScheduleFormDialogState extends State<ScheduleFormDialog> {
       _ensureFilteredValues();
       _loading = false;
     });
+  }
+
+  List<Map<String, dynamic>> get _filteredSpecialities {
+    if (_facultyId == null) return _specialities;
+    return _specialities
+        .where((s) => _readInt(s, 'faculty_id') == _facultyId)
+        .toList();
+  }
+
+  List<Map<String, dynamic>> get _filteredGroups {
+    return _groups.where((g) {
+      final groupSpecialityId = _readInt(g, 'speciality_id');
+      final matchesSpeciality = _specialityId == null || groupSpecialityId == _specialityId;
+      final matchesCourse = _course == null || _readInt(g, 'course') == _course;
+      return matchesSpeciality && matchesCourse;
+    }).toList();
   }
 
   List<Map<String, dynamic>> get _groupDisciplines =>
@@ -90,6 +118,14 @@ class _ScheduleFormDialogState extends State<ScheduleFormDialog> {
   }
 
   void _ensureFilteredValues() {
+    final specialities = _filteredSpecialities;
+    if (!specialities.any((s) => s['id'] == _specialityId)) {
+      _specialityId = _firstId(specialities);
+    }
+    final groups = _filteredGroups;
+    if (!groups.any((g) => g['id'] == _groupId)) {
+      _groupId = _firstId(groups);
+    }
     final subjects = _filteredSubjects;
     if (!subjects.any((s) => s['id'] == _subjectId)) {
       _subjectId = _firstId(subjects);
@@ -106,11 +142,14 @@ class _ScheduleFormDialogState extends State<ScheduleFormDialog> {
       'study_week_id': _weekId,
       'day_num': _dayNum,
       'pair_num': _pairNum,
+      'faculty_id': _facultyId,
+      'speciality_id': _specialityId,
+      'course': _course,
+      'group_id': _groupId,
       'subject_id': _subjectId,
       'teacher_id': _teacherId,
       'lesson_type': _lessonType,
       'classroom_id': _classroomId,
-      'group_id': _groupId,
     });
   }
 
@@ -177,9 +216,46 @@ class _ScheduleFormDialogState extends State<ScheduleFormDialog> {
                       ),
                       const SizedBox(height: 12),
                       _select(
+                        label: 'Факультет',
+                        value: _facultyId,
+                        items: _faculties,
+                        onChanged: (v) => setState(() {
+                          _facultyId = v;
+                          _ensureFilteredValues();
+                        }),
+                      ),
+                      const SizedBox(height: 12),
+                      _select(
+                        label: 'Направление',
+                        value: _specialityId,
+                        items: _filteredSpecialities,
+                        emptyText: 'Для факультета нет направлений',
+                        onChanged: (v) => setState(() {
+                          _specialityId = v;
+                          _ensureFilteredValues();
+                        }),
+                      ),
+                      const SizedBox(height: 12),
+                      _selectFromStringMap(
+                        label: 'Курс',
+                        value: _course,
+                        items: const {
+                          '1': '1 курс',
+                          '2': '2 курс',
+                          '3': '3 курс',
+                          '4': '4 курс'
+                        },
+                        onChanged: (v) => setState(() {
+                          _course = v;
+                          _ensureFilteredValues();
+                        }),
+                      ),
+                      const SizedBox(height: 12),
+                      _select(
                         label: 'Группа',
                         value: _groupId,
-                        items: _groups,
+                        items: _filteredGroups,
+                        emptyText: 'Нет групп для фильтра',
                         onChanged: (v) => setState(() {
                           _groupId = v;
                           _ensureFilteredValues();
@@ -203,6 +279,8 @@ class _ScheduleFormDialogState extends State<ScheduleFormDialog> {
                         items: _filteredTeachers,
                         labelKey: 'fio',
                         emptyText: 'Нет преподавателей для предмета',
+                        allowEmpty: true,
+                        emptyItemLabel: 'Не выбран',
                         onChanged: (v) => setState(() => _teacherId = v),
                       ),
                       const SizedBox(height: 12),
@@ -255,25 +333,37 @@ class _ScheduleFormDialogState extends State<ScheduleFormDialog> {
     required ValueChanged<int?> onChanged,
     String labelKey = 'name',
     String emptyText = 'Нет данных',
+    bool allowEmpty = false,
+    String emptyItemLabel = 'Выберите...',
   }) {
     final normalizedValue = items.any((e) => e['id'] == value) ? value : null;
-    return DropdownButtonFormField<int>(
+    final dropdownItems = <DropdownMenuItem<int?>>[];
+    if (allowEmpty) {
+      dropdownItems.add(
+        DropdownMenuItem<int?>(
+          value: null,
+          child: Text(emptyItemLabel),
+        ),
+      );
+    }
+    dropdownItems.addAll(
+      items.map(
+        (e) => DropdownMenuItem<int?>(
+          value: e['id'] as int,
+          child: Text(
+            '${e[labelKey] ?? e['name']}',
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+    return DropdownButtonFormField<int?>(
       initialValue: normalizedValue,
       isExpanded: true,
       decoration: InputDecoration(labelText: label),
-      items: items
-          .map(
-            (e) => DropdownMenuItem<int>(
-              value: e['id'] as int,
-              child: Text(
-                '${e[labelKey] ?? e['name']}',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )
-          .toList(),
+      items: dropdownItems,
       hint: Text(emptyText),
-      validator: (v) => v == null ? 'Заполните поле' : null,
+      validator: allowEmpty ? null : (v) => v == null ? 'Заполните поле' : null,
       onChanged: items.isEmpty ? null : onChanged,
     );
   }

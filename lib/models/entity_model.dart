@@ -19,6 +19,10 @@ class EntityField {
     this.options,
     this.refEndpoint,
     this.refLabelKey = 'name',
+
+    // Новые поля
+    this.dependsOn = const [],
+    this.foreignKey,
   });
 
   final String key;
@@ -27,11 +31,17 @@ class EntityField {
   final bool required;
   final Map<String, String>? options;
 
-  /// For fkSelect: endpoint to load reference records (e.g. '/groups')
+  /// Для fkSelect
   final String? refEndpoint;
 
-  /// For fkSelect: which key from reference records to display as label
+  /// Какое поле отображать
   final String refLabelKey;
+
+  /// От какого поля зависит данный список
+  final List<String> dependsOn;
+
+  /// Поле в дочерней таблице, по которому фильтровать
+  final String? foreignKey;
 }
 
 enum FieldType { text, number, date, email, select, fkSelect }

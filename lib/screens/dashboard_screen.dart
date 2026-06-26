@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 
 import '../core/app_state.dart';
 import '../providers/auth_provider.dart';
-import '../services/academic_service.dart';
 import '../widgets/glass.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -401,7 +400,6 @@ class _QuickActionCard extends StatelessWidget {
 class _InfoBanners extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Wrap(
       spacing: 16,
       runSpacing: 16,

@@ -119,7 +119,7 @@ class _GradebookScreenState extends State<GradebookScreen> {
                 SizedBox(
                   width: 220,
                   child: DropdownButtonFormField<int>(
-                    value: groupId,
+                    initialValue: groupId,
                     decoration: const InputDecoration(
                       labelText: 'Группа',
                       border: OutlineInputBorder(),
@@ -274,7 +274,7 @@ class _GradebookScreenState extends State<GradebookScreen> {
                           context,
                         ).colorScheme.primary.withValues(alpha: .12),
                         child: Text(
-                          '${studentData['_fio'].toString()[0]}',
+                          studentData['_fio'].toString()[0],
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.w900,
