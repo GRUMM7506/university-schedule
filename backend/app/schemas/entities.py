@@ -152,10 +152,10 @@ class TeacherBase(BaseModel):
     fio: str
     scientific_degree: str | None = None
     academic_title: str | None = None
-    position: str
+    position: str | None = None
     phone: str | None = None
     address: str | None = None
-    email: EmailStr
+    email: EmailStr | None = None
 
 
 class TeacherCreate(TeacherBase):
@@ -181,7 +181,7 @@ class StudentBase(BaseModel):
     group_id: int
     phone: str | None = None
     address: str | None = None
-    email: EmailStr
+    email: EmailStr | None = None
     birth_date: date
 
 

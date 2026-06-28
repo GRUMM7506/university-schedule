@@ -93,23 +93,55 @@ const entityDefinitions = <EntityDefinition>[
     title: 'Студенты',
     route: '/students',
     endpoint: '/students',
-    columns: ['fio', 'group_id', 'phone', 'email'],
+    columns: ['fio', 'faculty_id', 'speciality_id', 'group_id', 'phone'],
     fields: [
       EntityField(key: 'fio', label: 'ФИО'),
+      // Факультет → Специальность → Группа: каскадная фильтрация
+      EntityField(
+        key: 'faculty_id',
+        label: 'Факультет',
+        type: FieldType.fkSelect,
+        refEndpoint: '/faculties',
+      ),
+      EntityField(
+        key: 'speciality_id',
+        label: 'Направление',
+        type: FieldType.fkSelect,
+        refEndpoint: '/specialities',
+        dependsOn: ['faculty_id'],
+        foreignKey: 'faculty_id',
+      ),
+      // Курс — выбор из списка (в университете максимум 4 курса)
+      // EntityField(
+      //   key: 'course',
+      //   label: 'Курс',
+      //   type: FieldType.select,
+      //   options: {'1': '1 курс', '2': '2 курс', '3': '3 курс', '4': '4 курс'},
+      // ),
       EntityField(
         key: 'group_id',
         label: 'Группа',
         type: FieldType.fkSelect,
         refEndpoint: '/groups',
+
+        dependsOn: [
+          'speciality_id',
+          'course',
+        ],
       ),
-      EntityField(key: 'phone', label: 'Телефон', required: false),
-      EntityField(key: 'email', label: 'Email', type: FieldType.email),
-      EntityField(key: 'address', label: 'Адрес', required: false),
       EntityField(
         key: 'birth_date',
         label: 'Дата рождения',
         type: FieldType.date,
       ),
+      EntityField(key: 'phone', label: 'Телефон', required: false),
+      EntityField(
+        key: 'email',
+        label: 'Email',
+        type: FieldType.email,
+        required: true,
+      ),
+      EntityField(key: 'address', label: 'Адрес', required: false),
     ],
   ),
   EntityDefinition(
@@ -121,9 +153,14 @@ const entityDefinitions = <EntityDefinition>[
       EntityField(key: 'fio', label: 'ФИО'),
       EntityField(key: 'scientific_degree', label: 'Степень', required: false),
       EntityField(key: 'academic_title', label: 'Звание', required: false),
-      EntityField(key: 'position', label: 'Должность'),
+      EntityField(key: 'position', label: 'Должность', required: false),
       EntityField(key: 'phone', label: 'Телефон', required: false),
-      EntityField(key: 'email', label: 'Email', type: FieldType.email),
+      EntityField(
+        key: 'email',
+        label: 'Email',
+        type: FieldType.email,
+        required: false,
+      ),
       EntityField(key: 'address', label: 'Адрес', required: false),
     ],
   ),
