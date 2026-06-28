@@ -21,6 +21,15 @@ class ApiClient {
           }
           handler.next(options);
         },
+        onError: (DioException e, handler) {
+          if (e.response?.statusCode == 401) {
+            onSessionExpired?.call();
+          } else {
+            final message = e.response?.data?['detail'] ?? e.message ?? 'Произошла ошибка сети';
+            onError?.call(message);
+          }
+          handler.next(e);
+        },
       ),
     );
     if (kDebugMode) {
@@ -32,4 +41,10 @@ class ApiClient {
 
   final Dio dio;
   String? token;
+
+  /// Callback for general API errors to be shown in UI
+  void Function(String message)? onError;
+
+  /// Callback for 401 Unauthorized errors
+  void Function()? onSessionExpired;
 }

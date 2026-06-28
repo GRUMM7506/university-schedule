@@ -237,3 +237,16 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
+    refresh_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class UserPermission(Base):
+    __tablename__ = "user_permissions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    permission: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_granted: Mapped[bool] = mapped_column(nullable=False, default=True)
+
+    __table_args__ = (UniqueConstraint("user_id", "permission", name="uq_user_permission"),)
+

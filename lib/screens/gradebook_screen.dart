@@ -79,7 +79,7 @@ class _GradebookScreenState extends State<GradebookScreen> {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           GlassPanel(
             padding: const EdgeInsets.all(20),
@@ -119,7 +119,7 @@ class _GradebookScreenState extends State<GradebookScreen> {
                 SizedBox(
                   width: 220,
                   child: DropdownButtonFormField<int>(
-                    value: groupId,
+                    initialValue: groupId,
                     decoration: const InputDecoration(
                       labelText: 'Группа',
                       border: OutlineInputBorder(),
@@ -169,7 +169,7 @@ class _GradebookScreenState extends State<GradebookScreen> {
                   ? const Center(child: CircularProgressIndicator())
                   : rawData.isEmpty
                   ? _EmptyState()
-                  : _buildTable(),
+                  : _buildTable(MediaQuery.of(context).size.width),
             ),
           ),
         ],
@@ -177,7 +177,7 @@ class _GradebookScreenState extends State<GradebookScreen> {
     );
   }
 
-  Widget _buildTable() {
+  Widget _buildTable(double width) {
     final pivot = _buildPivot();
     final subjects = _getSubjects(pivot).toList()..sort();
     final students = pivot.entries
@@ -193,12 +193,14 @@ class _GradebookScreenState extends State<GradebookScreen> {
     return SingleChildScrollView(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: DataTable(
-          headingRowColor: WidgetStateProperty.all(
-            Theme.of(
-              context,
-            ).colorScheme.primaryContainer.withValues(alpha: .15),
-          ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minWidth: width),
+          child: DataTable(
+            headingRowColor: WidgetStateProperty.all(
+              Theme.of(
+                context,
+              ).colorScheme.primaryContainer.withValues(alpha: .15),
+            ),
           columns: [
             const DataColumn(
               label: Text('№', style: TextStyle(fontWeight: FontWeight.w800)),
@@ -274,7 +276,7 @@ class _GradebookScreenState extends State<GradebookScreen> {
                           context,
                         ).colorScheme.primary.withValues(alpha: .12),
                         child: Text(
-                          '${studentData['_fio'].toString()[0]}',
+                          studentData['_fio'].toString()[0],
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.w900,
@@ -331,6 +333,7 @@ class _GradebookScreenState extends State<GradebookScreen> {
           }).toList(),
         ),
       ),
+    ),
     );
   }
 

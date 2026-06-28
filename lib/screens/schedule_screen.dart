@@ -43,9 +43,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     1: '08:00–09:30',
     2: '09:45–11:15',
     3: '11:30–13:00',
-    4: '13:45–15:15',
-    5: '15:30–17:00',
-    6: '17:15–18:45',
+    4: '14:00–15:30',
+    5: '15:45–17:15',
   };
 
   @override
@@ -69,8 +68,30 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     teachers = await service.list('/teachers');
     weeks = await service.list('/study-weeks');
     if (groups.isNotEmpty) groupId = groups.first['id'] as int;
-    if (weeks.isNotEmpty) weekId = weeks.first['id'] as int;
+
+    // Auto-detect current week based on today's date
+    if (weeks.isNotEmpty) {
+      final today = DateTime.now();
+      weekId = _findCurrentWeek(today, weeks) ?? weeks.first['id'] as int;
+    }
     await _load();
+  }
+
+  /// Returns the first [StudyWeek] whose start_date ≤ today ≤ end_date,
+  /// or null if none matches.
+  int? _findCurrentWeek(DateTime today, List<Map<String, dynamic>> weeks) {
+    final normalized = DateTime(today.year, today.month, today.day);
+    for (final w in weeks) {
+      final start = DateTime.tryParse('${w['start_date']}');
+      final end = DateTime.tryParse('${w['end_date']}');
+      if (start != null &&
+          end != null &&
+          !normalized.isBefore(start) &&
+          !normalized.isAfter(end)) {
+        return w['id'] as int;
+      }
+    }
+    return null;
   }
 
   Future<void> _load() async {
@@ -452,40 +473,30 @@ class _DayColumn extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        if (items.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: .2),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: scheme.outlineVariant.withValues(alpha: .3),
-                  style: BorderStyle.values[1],
-                ),
+        ...() {
+          final itemByPair = {
+            for (final item in items) item['pair_num'] as int: item,
+          };
+          return [
+            for (int pair = 1; pair <= 5; pair++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: itemByPair.containsKey(pair)
+                    ? _LessonCard(
+                        item: itemByPair[pair]!,
+                        pairTimes: pairTimes,
+                        onEdit: onEdit != null
+                            ? () => onEdit!(itemByPair[pair]!)
+                            : null,
+                        onDelete: onDelete != null
+                            ? () =>
+                                onDelete!(itemByPair[pair]!['id'] as int)
+                            : null,
+                      )
+                    : _EmptySlot(pairNum: pair, pairTimes: pairTimes),
               ),
-              child: Text(
-                'Нет\nзанятий',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: scheme.onSurfaceVariant.withValues(alpha: .5),
-                ),
-              ),
-            ),
-          )
-        else
-          ...items.map(
-            (item) => _LessonCard(
-              item: item,
-              pairTimes: pairTimes,
-              onEdit: onEdit != null ? () => onEdit!(item) : null,
-              onDelete: onDelete != null
-                  ? () => onDelete!(item['id'] as int)
-                  : null,
-            ),
-          ),
+          ];
+        }(),
       ],
     );
   }
@@ -625,6 +636,64 @@ class _InfoRow extends StatelessWidget {
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Empty Pair Slot (grid) ───────────────────────────────────────────────────
+
+class _EmptySlot extends StatelessWidget {
+  const _EmptySlot({
+    required this.pairNum,
+    required this.pairTimes,
+  });
+
+  final int pairNum;
+  final Map<int, String> pairTimes;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final time = pairTimes[pairNum] ?? '';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: .2),
+          style: BorderStyle.solid,
+          width: 0.5,
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            '$pairNum',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurfaceVariant.withValues(alpha: .35),
+            ),
+          ),
+          Text(
+            time,
+            style: TextStyle(
+              fontSize: 9,
+              color: scheme.onSurfaceVariant.withValues(alpha: .25),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '—',
+            style: TextStyle(
+              fontSize: 12,
+              color: scheme.onSurfaceVariant.withValues(alpha: .25),
             ),
           ),
         ],

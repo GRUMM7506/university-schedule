@@ -111,6 +111,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             user: user,
             onEdit: () => _openEditDialog(context, user),
             onDelete: () => _confirmDelete(context, user),
+            onPermissions: () => _openPermissionsDialog(context, user),
           );
         },
       ),
@@ -188,6 +189,19 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       _load();
     }
   }
+
+  Future<void> _openPermissionsDialog(
+    BuildContext ctx,
+    Map<String, dynamic> user,
+  ) async {
+    await showDialog(
+      context: ctx,
+      builder: (_) => _PermissionsDialog(
+        userId: user['id'] as int,
+        username: '${user['username']}',
+      ),
+    );
+  }
 }
 
 class _UserTile extends StatelessWidget {
@@ -195,11 +209,13 @@ class _UserTile extends StatelessWidget {
     required this.user,
     required this.onEdit,
     required this.onDelete,
+    required this.onPermissions,
   });
 
   final Map<String, dynamic> user;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onPermissions;
 
   @override
   Widget build(BuildContext context) {
@@ -268,12 +284,185 @@ class _UserTile extends StatelessWidget {
             icon: const Icon(Icons.edit_outlined),
           ),
           IconButton(
+            tooltip: 'Права доступа',
+            onPressed: onPermissions,
+            icon: const Icon(Icons.admin_panel_settings_outlined),
+          ),
+          IconButton(
             tooltip: 'Удалить',
             onPressed: onDelete,
             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _PermissionsDialog extends StatefulWidget {
+  const _PermissionsDialog({required this.userId, required this.username});
+
+  final int userId;
+  final String username;
+
+  @override
+  State<_PermissionsDialog> createState() => _PermissionsDialogState();
+}
+
+class _PermissionsDialogState extends State<_PermissionsDialog> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _permissions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final service = context.read<AcademicService>();
+    final data = await service.fetchUserPermissions(widget.userId);
+    final perms = (data['permissions'] as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    if (!mounted) return;
+    setState(() {
+      _permissions = perms;
+      _loading = false;
+    });
+  }
+
+  Future<void> _toggle(Map<String, dynamic> perm, bool? newValue) async {
+    final service = context.read<AcademicService>();
+    try {
+      await service.updateUserPermission(widget.userId, {
+        'permission': perm['permission'],
+        'is_granted': newValue,
+      });
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  static const _entityNames = {
+    'dashboard': 'Дашборд',
+    'users': 'Пользователи',
+    'permissions': 'Права доступа',
+    'faculties': 'Факультеты',
+    'specialities': 'Специальности',
+    'groups': 'Группы',
+    'students': 'Студенты',
+    'teachers': 'Преподаватели',
+    'subjects': 'Предметы',
+    'classrooms': 'Аудитории',
+    'study-weeks': 'Учебные недели',
+    'disciplines': 'Дисциплины',
+    'execution': 'Исполнение',
+    'schedule': 'Расписание',
+    'attendance': 'Посещаемость',
+    'performance': 'Успеваемость',
+    'gradebook': 'Журнал',
+  };
+
+  bool _effective(Map<String, dynamic> perm) {
+    final override = perm['override'];
+    if (override == null) return perm['default_granted'] as bool? ?? false;
+    return override as bool;
+  }
+
+  Widget _permCheckbox(Map<String, dynamic> perm, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Checkbox(
+          value: _effective(perm),
+          onChanged: (v) => _toggle(perm, v),
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+        Text(label, style: const TextStyle(fontSize: 12)),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = <String, Map<String, Map<String, dynamic>>>{};
+    for (final p in _permissions) {
+      final permKey = p['permission'] as String;
+      final entity = permKey.split('.').first;
+      final action = permKey.split('.').last;
+      groups.putIfAbsent(entity, () => {});
+      groups[entity]![action] = p;
+    }
+    final entries = groups.entries.toList();
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          const Icon(Icons.admin_panel_settings_outlined),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('Права доступа: ${widget.username}'),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 520,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView.separated(
+                shrinkWrap: true,
+                itemCount: entries.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, i) {
+                  final entity = entries[i].key;
+                  final perms = entries[i].value;
+                  final label = _entityNames[entity] ?? entity;
+                  final view = perms['view'];
+                  final edit = perms['edit'];
+                  final manage = perms['manage'];
+                  final anyOverridden = [
+                    view,
+                    edit,
+                    manage,
+                  ].any((p) => p != null && p['override'] != null);
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    child: Row(
+                      children: [
+                        if (anyOverridden)
+                          Icon(Icons.tune, size: 14, color: Theme.of(context).colorScheme.primary),
+                        if (anyOverridden) const SizedBox(width: 4),
+                        SizedBox(
+                          width: 130,
+                          child: Text(
+                            label,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (view != null) _permCheckbox(view, 'Чтение'),
+                        if (edit != null) _permCheckbox(edit, 'Редактирование'),
+                        if (manage != null) _permCheckbox(manage, 'Управление'),
+                      ],
+                    ),
+                  );
+                },
+              ),
+      ),
+      actions: [
+        FilledButton.tonal(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Закрыть'),
+        ),
+      ],
     );
   }
 }
@@ -361,7 +550,7 @@ class _UserDialogState extends State<_UserDialog> {
             ),
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
-              value: _role,
+              initialValue: _role,
               decoration: const InputDecoration(
                 labelText: 'Роль',
                 prefixIcon: Icon(Icons.badge_outlined),
@@ -389,8 +578,9 @@ class _UserDialogState extends State<_UserDialog> {
           onPressed: () {
             final payload = <String, String>{'role': _role};
             if (!isEdit) payload['username'] = _usernameCtrl.text.trim();
-            if (_passwordCtrl.text.isNotEmpty)
+            if (_passwordCtrl.text.isNotEmpty) {
               payload['password'] = _passwordCtrl.text;
+            }
             Navigator.pop(context, payload);
           },
           icon: const Icon(Icons.save_outlined),

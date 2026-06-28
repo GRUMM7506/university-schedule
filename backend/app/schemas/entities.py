@@ -8,6 +8,12 @@ class OrmModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TemplateResponse(BaseModel):
+    data: Any
+    message: str | None = None
+    status: str = "success"
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -121,6 +127,27 @@ class StudentGroupRead(StudentGroupBase, OrmModel):
     id: int
 
 
+class StudyWeekBase(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    start_date: date
+    end_date: date
+
+
+class StudyWeekCreate(StudyWeekBase):
+    pass
+
+
+class StudyWeekUpdate(BaseModel):
+    name: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+class StudyWeekRead(StudyWeekBase, OrmModel):
+    id: int
+
+
+
 class TeacherBase(BaseModel):
     fio: str
     scientific_degree: str | None = None
@@ -198,30 +225,9 @@ class DisciplineLoadUpdate(BaseModel):
     practical_hours: int | None = Field(default=None, ge=0)
     lab_hours: int | None = Field(default=None, ge=0)
     other_hours: int | None = Field(default=None, ge=0)
-    control_hours: int | None = Field(default=None, ge=0)
 
 
 class DisciplineLoadRead(DisciplineLoadBase, OrmModel):
-    id: int
-
-
-class StudyWeekBase(BaseModel):
-    name: str
-    start_date: date
-    end_date: date
-
-
-class StudyWeekCreate(StudyWeekBase):
-    pass
-
-
-class StudyWeekUpdate(BaseModel):
-    name: str | None = None
-    start_date: date | None = None
-    end_date: date | None = None
-
-
-class StudyWeekRead(StudyWeekBase, OrmModel):
     id: int
 
 
@@ -364,6 +370,33 @@ class DashboardStats(BaseModel):
     teachers: int
     groups: int
     faculties: int
+
+
+class BulkImportResult(BaseModel):
+    success_count: int
+    error_count: int
+    errors: list[str] | None = None
+
+
+class RegisterStudent(StudentCreate):
+    password: str = Field(min_length=6)
+
+
+class StudentImportRow(BaseModel):
+    fio: str
+    group_name: str
+    email: EmailStr
+    phone: str | None = None
+    address: str | None = None
+    birth_date: date
+
+
+class TeacherImportRow(BaseModel):
+    fio: str
+    position: str
+    email: EmailStr
+    phone: str | None = None
+    address: str | None = None
 
 
 SchemaRegistry = dict[str, dict[str, Any]]

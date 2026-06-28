@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/entities.dart';
@@ -64,7 +63,6 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final scheme = Theme.of(context).colorScheme;
 
     return Column(
       children: [
@@ -263,7 +261,7 @@ class _ScheduleTab extends StatelessWidget {
           SizedBox(
             width: 220,
             child: DropdownButtonFormField<int>(
-              value: weekId,
+              initialValue: weekId,
               decoration: const InputDecoration(
                 labelText: 'Неделя',
                 border: OutlineInputBorder(),

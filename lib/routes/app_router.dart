@@ -22,11 +22,19 @@ import '../services/api_client.dart';
 import '../services/entity_service.dart';
 import '../widgets/app_shell.dart';
 
-GoRouter buildRouter(AuthProvider auth, ApiClient client) {
+GoRouter buildRouter(
+  AuthProvider auth,
+  ApiClient client,
+  AcademicService academicService,
+) {
   return GoRouter(
     refreshListenable: auth,
     initialLocation: '/',
     redirect: (context, state) {
+      // While we're attempting to silently restore a session from the
+      // stored refresh token, don't redirect anywhere yet — show a splash.
+      if (auth.restoring) return null;
+
       final loggingIn = state.uri.path == '/login';
       final setupProfile = state.uri.path == '/profile-setup';
 
@@ -50,14 +58,14 @@ GoRouter buildRouter(AuthProvider auth, ApiClient client) {
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/profile-setup',
-        builder: (context, state) => Provider(
-          create: (_) => AcademicService(client),
+        builder: (context, state) => Provider.value(
+          value: academicService,
           child: const ProfileSetupScreen(),
         ),
       ),
       ShellRoute(
         builder: (context, state, child) => MultiProvider(
-          providers: [Provider(create: (_) => AcademicService(client))],
+          providers: [Provider.value(value: academicService)],
           child: AppShell(child: child),
         ),
         routes: [
@@ -128,8 +136,10 @@ GoRouter buildRouter(AuthProvider auth, ApiClient client) {
               path: definition.route,
               builder: (context, state) => ChangeNotifierProvider(
                 key: ValueKey(definition.route),
-                create: (_) =>
-                    EntityProvider(EntityService(client, definition)),
+                create: (_) => EntityProvider(
+                  EntityService(client, definition),
+                  academicService,
+                ),
                 child: EntityListScreen(definition: definition),
               ),
             ),

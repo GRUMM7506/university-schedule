@@ -125,7 +125,7 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
           : null;
 
       return DropdownButtonFormField<int>(
-        value: validVal,
+        initialValue: validVal,
         isExpanded: true,
         decoration: InputDecoration(
           labelText: field.label,
@@ -181,7 +181,7 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
 
     if (field.type == FieldType.select) {
       return DropdownButtonFormField<String>(
-        value: controllers[field.key]!.text.isEmpty
+        initialValue: controllers[field.key]!.text.isEmpty
             ? null
             : controllers[field.key]!.text,
         isExpanded: true,

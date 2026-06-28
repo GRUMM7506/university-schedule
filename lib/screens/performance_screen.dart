@@ -96,7 +96,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
             SizedBox(
               width: 180,
               child: DropdownButtonFormField<int>(
-                value: controlType,
+                initialValue: controlType,
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Контроль'),
                 items: const [
@@ -109,7 +109,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
             SizedBox(
               width: 120,
               child: DropdownButtonFormField<int>(
-                value: tourNum,
+                initialValue: tourNum,
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Тур'),
                 items: [1, 2, 3, 4]
@@ -156,7 +156,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
     return SizedBox(
       width: 260,
       child: DropdownButtonFormField<int>(
-        value: data.any((e) => e['id'] == value) ? value : null,
+        initialValue: data.any((e) => e['id'] == value) ? value : null,
         isExpanded: true,
         menuMaxHeight: 320,
         decoration: InputDecoration(labelText: label),

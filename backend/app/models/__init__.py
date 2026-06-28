@@ -13,4 +13,5 @@ from app.models.entities import (  # noqa: F401
     Subject,
     Teacher,
     User,
+    UserPermission,
 )

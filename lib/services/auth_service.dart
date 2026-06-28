@@ -18,9 +18,25 @@ class AuthService {
     };
   }
 
+  Future<Map<String, dynamic>> refresh(String refreshToken) async {
+    final response = await client.dio.post(
+      '/auth/refresh',
+      data: {'refresh_token': refreshToken},
+    );
+    client.token = response.data['access_token'] as String;
+    return response.data as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> me() async {
     final response = await client.dio.get('/me');
     return response.data as Map<String, dynamic>;
+  }
+
+  Future<void> changePassword(String oldPassword, String newPassword) async {
+    await client.dio.post(
+      '/auth/change-password',
+      data: {'old_password': oldPassword, 'new_password': newPassword},
+    );
   }
 
   void logout() {

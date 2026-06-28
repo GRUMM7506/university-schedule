@@ -1,3 +1,4 @@
+import '../core/ttl_cache.dart';
 import 'api_client.dart';
 
 class AcademicService {
@@ -5,7 +6,23 @@ class AcademicService {
 
   final ApiClient client;
 
-  Future<List<Map<String, dynamic>>> list(String endpoint) async {
+  /// Caches the *unparameterized* `list(endpoint)` calls used by dropdowns
+  /// and forms throughout the app (faculties, groups, teachers, subjects,
+  /// etc.). Screens that search/sort go through EntityService instead and
+  /// are intentionally not cached here, since they need live results.
+  final TtlCache<String, List<Map<String, dynamic>>> _listCache = TtlCache(
+    ttl: const Duration(minutes: 2),
+  );
+
+  Future<List<Map<String, dynamic>>> list(
+    String endpoint, {
+    bool forceRefresh = false,
+  }) async {
+    if (!forceRefresh) {
+      final cached = _listCache.get(endpoint);
+      if (cached != null) return cached;
+    }
+
     final response = await client.dio.get('$endpoint/list');
     var data = (response.data as List)
         .map((e) => Map<String, dynamic>.from(e as Map))
@@ -32,8 +49,16 @@ class AcademicService {
         }).toList();
       } catch (_) {}
     }
+
+    _listCache.set(endpoint, data);
     return data;
   }
+
+  /// Drops all cached reference-data lists. Call this after creating,
+  /// editing, or deleting a record anywhere in the app so the next read
+  /// (a dropdown, a form, another screen) reflects the change instead of
+  /// showing up to [TtlCache]'s TTL of stale data.
+  void clearListCache() => _listCache.clear();
 
   Future<Map<String, dynamic>> groupSchedule(int groupId, {int? weekId}) async {
     final response = await client.dio.get(
@@ -158,5 +183,25 @@ class AcademicService {
 
   Future<void> setupProfile(Map<String, dynamic> payload) async {
     await client.dio.post('/profile/setup', data: payload);
+    clearListCache();
+  }
+
+  Future<void> updateProfile(Map<String, dynamic> payload) async {
+    await client.dio.put('/profile/update', data: payload);
+    clearListCache();
+  }
+
+  /// Fetch a single entity record (e.g. /students/5 or /teachers/3)
+  Future<Map<String, dynamic>> getEntity(String endpoint, int id) async {
+    final response = await client.dio.get('$endpoint/$id');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+  Future<Map<String, dynamic>> fetchUserPermissions(int userId) async {
+    final response = await client.dio.get('/permissions/user/$userId');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<void> updateUserPermission(int userId, Map<String, dynamic> payload) async {
+    await client.dio.put('/permissions/$userId', data: payload);
   }
 }

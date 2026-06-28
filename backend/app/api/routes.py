@@ -23,6 +23,7 @@ from app.models import (
     Subject,
     Teacher,
     User,
+    UserPermission,
 )
 from app.schemas import (
     AttendanceBulkItem,
@@ -47,6 +48,7 @@ from app.schemas import (
     PerformanceCreate,
     PerformanceRead,
     PerformanceUpdate,
+    RegisterStudent,
     ScheduleCreate,
     ScheduleRead,
     ScheduleUpdate,
@@ -58,6 +60,7 @@ from app.schemas import (
     StudentGroupCreate,
     StudentGroupRead,
     StudentGroupUpdate,
+    StudentImportRow,
     StudentRead,
     StudentUpdate,
     StudyWeekCreate,
@@ -67,8 +70,10 @@ from app.schemas import (
     SubjectRead,
     SubjectUpdate,
     TeacherCreate,
+    TeacherImportRow,
     TeacherRead,
     TeacherUpdate,
+    TemplateResponse,
     Token,
 )
 from app.services.crud import CRUDService
@@ -84,10 +89,16 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.username == payload.username))
     if user is None or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    from app.core.security import create_refresh_token
+    refresh_token = create_refresh_token(user.username)
+    user.refresh_token = refresh_token
+    db.commit()
+
     # Attach student_id if user is a student
     student_id = None
     if user.role == "Student":
-        student = db.scalar(select(Student).where(Student.email == f"{user.username}@student.uz"))
+        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
         if student:
             student_id = student.id
     return Token(
@@ -97,13 +108,137 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         student_id=student_id,
     )
 
+@api_router.post("/auth/refresh", response_model=Token)
+def refresh_token(payload: dict, db: Session = Depends(get_db)):
+    from app.core.security import create_refresh_token
+    refresh_token = payload.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="Refresh token is missing")
+    
+    try:
+        from jose import jwt
+        from app.core.config import settings
+        payload_data = jwt.decode(refresh_token, settings.secret_key, algorithms=[settings.algorithm])
+        username = payload_data.get("sub")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    user = db.scalar(select(User).where(User.username == username))
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    new_refresh = create_refresh_token(user.username)
+    user.refresh_token = new_refresh
+    db.commit()
+
+    student_id = None
+    if user.role == "Student":
+        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
+        if student:
+            student_id = student.id
+
+    return Token(
+        access_token=create_access_token(user.username, user.role),
+        role=user.role,
+        username=user.username,
+        student_id=student_id,
+    )
+
+@api_router.post("/auth/change-password")
+def change_password(payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    old_password = payload.get("old_password")
+    new_password = payload.get("new_password")
+    if not old_password or not new_password:
+        raise HTTPException(status_code=400, detail="Both old and new passwords are required")
+    
+    if not verify_password(old_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Old password is incorrect")
+    
+    user.hashed_password = get_password_hash(new_password)
+    db.commit()
+    return {"ok": True}
 
 @api_router.get("/me")
 def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Return current user info with role-specific linked entity."""
     result = {"id": user.id, "username": user.username, "role": user.role}
     if user.role == "Student":
-        student = db.scalar(select(Student).where(Student.email == f"{user.username}@student.uz"))
+        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
+        if student:
+            result["linked_id"] = student.id
+            result["fio"] = student.fio
+    elif user.role == "Teacher":
+        teacher = db.scalar(select(Teacher).where(Teacher.email == f"{user.username}@uni.uz"))
+        if teacher:
+            result["linked_id"] = teacher.id
+            result["fio"] = teacher.fio
+    return result
+
+
+# ─── Profile ─────────────────────────────────────────────────────────────────────
+
+@api_router.post("/profile/setup")
+def setup_profile(payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role == "Student":
+        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
+        if student:
+            for key, value in payload.items():
+                if hasattr(student, key):
+                    setattr(student, key, value)
+            db.commit()
+            return {"ok": True}
+    elif user.role == "Teacher":
+        teacher = db.scalar(select(Teacher).where(Teacher.email == f"{user.username}@uni.uz"))
+        if teacher:
+            for key, value in payload.items():
+                if hasattr(teacher, key):
+                    setattr(teacher, key, value)
+            db.commit()
+            return {"ok": True}
+    raise HTTPException(status_code=404, detail="Profile not found")
+
+@api_router.put("/profile/update")
+def update_profile(payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role == "Student":
+        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
+        if student:
+            for key, value in payload.items():
+                if hasattr(student, key):
+                    setattr(student, key, value)
+            db.commit()
+            return {"ok": True}
+    elif user.role == "Teacher":
+        teacher = db.scalar(select(Teacher).where(Teacher.email == f"{user.username}@uni.uz"))
+        if teacher:
+            for key, value in payload.items():
+                if hasattr(teacher, key):
+                    setattr(teacher, key, value)
+            db.commit()
+            return {"ok": True}
+    raise HTTPException(status_code=404, detail="Profile not found")
+
+
+@api_router.post("/auth/change-password")
+def change_password(payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    old_password = payload.get("old_password")
+    new_password = payload.get("new_password")
+    if not old_password or not new_password:
+        raise HTTPException(status_code=400, detail="Both old and new passwords are required")
+    
+    if not verify_password(old_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Old password is incorrect")
+    
+    user.hashed_password = get_password_hash(new_password)
+    db.commit()
+    return {"ok": True}
+
+
+@api_router.get("/me")
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Return current user info with role-specific linked entity."""
+    result = {"id": user.id, "username": user.username, "role": user.role}
+    if user.role == "Student":
+        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
         if student:
             result["linked_id"] = student.id
             result["fio"] = student.fio
@@ -253,7 +388,7 @@ def setup_profile(
     if user.role == "Student":
         if payload.group_id is None or payload.birth_date is None:
             raise HTTPException(status_code=400, detail="Укажите группу и дату рождения")
-        email = f"{user.username}@student.uz"
+        email = f"{user.username}@msu.ru"
         existing = db.scalar(select(Student).where(Student.email == email))
         if existing:
             return {"linked_id": existing.id}
@@ -282,6 +417,59 @@ def setup_profile(
     db.commit()
     db.refresh(entity)
     return {"linked_id": entity.id}
+
+
+class ProfileUpdatePayload(BaseModel):
+    fio: str | None = None
+    position: str | None = None
+    group_id: int | None = None
+    birth_date: date | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+@api_router.put("/profile/update", dependencies=[Depends(require_any)])
+def update_profile(
+    payload: ProfileUpdatePayload,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update the current user's linked student or teacher profile."""
+    if user.role == "Admin":
+        raise HTTPException(status_code=400, detail="Администратору профиль не требуется")
+
+    if user.role == "Student":
+        entity = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
+        if not entity:
+            raise HTTPException(status_code=404, detail="Профиль студента не найден")
+        if payload.fio is not None:
+            entity.fio = payload.fio
+        if payload.group_id is not None:
+            entity.group_id = payload.group_id
+        if payload.birth_date is not None:
+            entity.birth_date = payload.birth_date
+        if payload.phone is not None:
+            entity.phone = payload.phone
+        if payload.address is not None:
+            entity.address = payload.address
+
+    elif user.role == "Teacher":
+        entity = db.scalar(select(Teacher).where(Teacher.email == f"{user.username}@uni.uz"))
+        if not entity:
+            raise HTTPException(status_code=404, detail="Профиль преподавателя не найден")
+        if payload.fio is not None:
+            entity.fio = payload.fio
+        if payload.position is not None:
+            entity.position = payload.position
+        if payload.phone is not None:
+            entity.phone = payload.phone
+        if payload.address is not None:
+            entity.address = payload.address
+    else:
+        raise HTTPException(status_code=400, detail="Неизвестная роль")
+
+    db.commit()
+    return {"ok": True}
 
 
 @api_router.get("/users", response_model=list[UserRead], dependencies=[Depends(require_admin)])
@@ -368,6 +556,46 @@ def teacher_schedule(teacher_id: int, week_id: int | None = None, db: Session = 
     if week_id:
         stmt = stmt.where(Schedule.study_week_id == week_id)
     return [ScheduleView(**row._asdict()) for row in db.execute(stmt).all()]
+
+# ─── Permissions ──────────────────────────────────────────────────────────────────
+
+@api_router.get("/permissions/user/{userId}")
+def get_user_permissions(userId: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Only Admin can view other's permissions, others can view their own
+    if user.role != "Admin" and user.id != userId:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    
+    perms = db.scalars(select(UserPermission).where(UserPermission.user_id == userId)).all()
+    
+    # We return a map of permission -> is_granted
+    return {"permissions": [p for p in perms]}
+
+@api_router.put("/permissions")
+def update_user_permission(payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role != "Admin":
+        raise HTTPException(status_code=403, detail="Only administrators can manage permissions")
+    
+    userId = payload.get("userId")
+    permission = payload.get("permission")
+    is_granted = payload.get("is_granted")
+    
+    if not all([userId, permission, is_granted is not None]):
+        raise HTTPException(status_code=400, detail="userId, permission, and is_granted are required")
+    
+    perm = db.scalar(select(UserPermission).where(
+        UserPermission.user_id == userId, 
+        UserPermission.permission == permission
+    ))
+    
+    if perm:
+        perm.is_granted = is_granted
+    else:
+        perm = UserPermission(user_id=userId, permission=permission, is_granted=is_granted)
+        db.add(perm)
+    
+    db.commit()
+    return {"ok": True}
+
 
 
 @api_router.get("/schedule/student/{student_id}", response_model=list[ScheduleView], dependencies=[Depends(require_any)])

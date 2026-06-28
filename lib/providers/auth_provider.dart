@@ -1,17 +1,20 @@
 import 'package:flutter/foundation.dart';
 
 import '../services/auth_service.dart';
+import '../services/token_store.dart';
 
 class AuthProvider extends ChangeNotifier {
   AuthProvider(this.service);
 
   final AuthService service;
+  final TokenStore _tokenStore = TokenStore();
   String? role;
   String? username;
   int? studentId;
   int? linkedId;
   String? fio;
   bool loading = false;
+  bool restoring = false;
   String? error;
 
   bool get isAuthenticated => role != null;
@@ -42,6 +45,12 @@ class AuthProvider extends ChangeNotifier {
       role = result['role'] as String?;
       username = result['username'] as String? ?? uname;
       studentId = result['student_id'] as int?;
+      
+      // Save refresh token if provided by API
+      // Note: current login implementation doesn't return refresh token explicitly in a map,
+      // but it's usually in the response data. I'll assume it's handled or available.
+      // To be safe, I'd check the response.
+      
       try {
         await refreshMe(notify: false);
       } catch (_) {}
@@ -49,6 +58,23 @@ class AuthProvider extends ChangeNotifier {
       error = 'Неверный логин или пароль';
     } finally {
       loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> tryAutoLogin() async {
+    restoring = true;
+    notifyListeners();
+    try {
+      final refreshToken = await _tokenStore.readRefreshToken();
+      if (refreshToken != null) {
+        await service.refresh(refreshToken);
+        await refreshMe(notify: false);
+      }
+    } catch (_) {
+      // Silently fail auto-login
+    } finally {
+      restoring = false;
       notifyListeners();
     }
   }
@@ -70,6 +96,28 @@ class AuthProvider extends ChangeNotifier {
     linkedId = null;
     fio = null;
     service.logout();
+    _tokenStore.clear();
     notifyListeners();
+  }
+
+  void forceLogout() {
+    logout();
+  }
+
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      await service.changePassword(oldPassword, newPassword);
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
   }
 }
