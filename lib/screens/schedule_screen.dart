@@ -589,46 +589,32 @@ class _DayColumn extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         ...() {
-          final itemByPair = {
-            for (final item in items) item['pair_num'] as int: item,
-          };
-          return [
-            for (int pair = 1; pair <= 5; pair++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: itemByPair.containsKey(pair)
-                    ? _LessonCard(
-                        item: itemByPair[pair]!,
-                        pairTimes: pairTimes,
-                        onEdit: onEdit != null
-                            ? () => onEdit!(itemByPair[pair]!)
-                            : null,
-                        onDelete: onDelete != null
-                            ? () =>
-                                onDelete!(itemByPair[pair]!['id'] as int)
-                            : null,
-                      )
-                    : _EmptySlot(pairNum: pair, pairTimes: pairTimes),
+  final itemByPair = {
+    for (final item in items) item['pair_num'] as int: item,
+  };
+
+  return [
+    for (int pair = 1; pair <= 5; pair++)
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: itemByPair.containsKey(pair)
+            ? _LessonCard(
+                item: itemByPair[pair]!,
+                pairTimes: pairTimes,
+                onEdit: onEdit != null
+                    ? () => onEdit!(itemByPair[pair]!)
+                    : null,
+                onDelete: onDelete != null
+                    ? () => onDelete!(itemByPair[pair]!['id'] as int)
+                    : null,
+              )
+            : _EmptySlot(
+                pairNum: pair,
+                pairTimes: pairTimes,
               ),
-<<<<<<< HEAD
-          ];
-        }(),
-=======
-              child: Text(
-                'Нет\nпар',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: scheme.onSurfaceVariant.withValues(alpha: .5),
-                ),
-              ),
-            ),
-          )
-        else
-          for (int pair = 1; pair <= maxPair; pair++) ..._buildPairSlots(pair),
->>>>>>> 27fb89610d8cee8aa0241c7df4430e26f115cd2f
-      ],
-    );
+      ),
+  ];
+}()]);
   }
 
   List<Widget> _buildPairSlots(int pair) {
