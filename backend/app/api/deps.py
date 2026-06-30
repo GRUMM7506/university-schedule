@@ -39,7 +39,7 @@ def require_staff(user: User = Depends(get_current_user)) -> User:
 
 
 def require_any(user: User = Depends(get_current_user)) -> User:
-    """Any authenticated user (Admin, Teacher, Student)."""
+    """Any authenticated user (Admin, Teacher, Student, Guest)."""
     return user
 
 

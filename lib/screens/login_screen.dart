@@ -100,6 +100,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               : const Icon(Icons.login),
                           label: const Text('Войти'),
                         ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: auth.loading ? null : auth.loginAsGuest,
+                          icon: const Icon(Icons.public),
+                          label: const Text('Войти как гость'),
+                        ),
                       ],
                     ),
                   );

@@ -153,8 +153,14 @@ _STUDENT: set[str] = {
     PERMISSION_PERFORMANCE_VIEW,
 }
 
+_GUEST: set[str] = {
+    PERMISSION_DASHBOARD_VIEW,
+    PERMISSION_SCHEDULE_VIEW,
+}
+
 DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
     "Admin": _ADMIN,
     "Teacher": _TEACHER,
     "Student": _STUDENT,
+    "Guest": _GUEST,
 }

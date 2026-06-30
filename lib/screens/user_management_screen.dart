@@ -312,6 +312,7 @@ class _PermissionsDialog extends StatefulWidget {
 class _PermissionsDialogState extends State<_PermissionsDialog> {
   bool _loading = true;
   List<Map<String, dynamic>> _permissions = [];
+  final Set<String> _pending = {};
 
   @override
   void initState() {
@@ -333,10 +334,13 @@ class _PermissionsDialogState extends State<_PermissionsDialog> {
   }
 
   Future<void> _toggle(Map<String, dynamic> perm, bool? newValue) async {
+    final permKey = perm['permission'] as String;
+    if (_pending.contains(permKey)) return;
+    setState(() => _pending.add(permKey));
     final service = context.read<AcademicService>();
     try {
       await service.updateUserPermission(widget.userId, {
-        'permission': perm['permission'],
+        'permission': permKey,
         'is_granted': newValue,
       });
       await _load();
@@ -345,6 +349,8 @@ class _PermissionsDialogState extends State<_PermissionsDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
       );
+    } finally {
+      if (mounted) setState(() => _pending.remove(permKey));
     }
   }
 
@@ -375,15 +381,27 @@ class _PermissionsDialogState extends State<_PermissionsDialog> {
   }
 
   Widget _permCheckbox(Map<String, dynamic> perm, String label) {
+    final permKey = perm['permission'] as String;
+    final isPending = _pending.contains(permKey);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Checkbox(
-          value: _effective(perm),
-          onChanged: (v) => _toggle(perm, v),
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          visualDensity: VisualDensity.compact,
+        SizedBox(
+          width: 18,
+          height: 18,
+          child: isPending
+              ? const Padding(
+                  padding: EdgeInsets.all(2),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Checkbox(
+                  value: _effective(perm),
+                  onChanged: (v) => _toggle(perm, v),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
         ),
+        const SizedBox(width: 4),
         Text(label, style: const TextStyle(fontSize: 12)),
       ],
     );

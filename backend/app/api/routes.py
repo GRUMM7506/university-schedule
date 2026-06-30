@@ -77,12 +77,24 @@ from app.schemas import (
     Token,
 )
 from app.services.crud import CRUDService
+from app.models.permissions import ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS, PERMISSION_LABELS
 from pydantic import BaseModel
 
 api_router = APIRouter(prefix="/api")
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
+
+def _student_for_user(db: Session, user: User) -> Student | None:
+    student = db.scalar(select(Student).where(Student.user_id == user.id))
+    if student:
+        return student
+
+    email_candidates = [f"{user.username}@msu.ru", f"{user.username}@student.uz"]
+    if "@" in user.username:
+        email_candidates.append(user.username)
+    return db.scalar(select(Student).where(Student.email.in_(email_candidates)))
+
 
 @api_router.post("/auth/login", response_model=Token)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
@@ -98,7 +110,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     # Attach student_id if user is a student
     student_id = None
     if user.role == "Student":
-        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
+        student = _student_for_user(db, user)
         if student:
             student_id = student.id
     return Token(
@@ -133,7 +145,7 @@ def refresh_token(payload: dict, db: Session = Depends(get_db)):
 
     student_id = None
     if user.role == "Student":
-        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
+        student = _student_for_user(db, user)
         if student:
             student_id = student.id
 
@@ -142,6 +154,26 @@ def refresh_token(payload: dict, db: Session = Depends(get_db)):
         role=user.role,
         username=user.username,
         student_id=student_id,
+    )
+
+@api_router.post("/auth/guest", response_model=Token)
+def guest_login(db: Session = Depends(get_db)):
+    # Find existing guest user or create one
+    guest = db.scalar(select(User).where(User.username == "guest"))
+    if guest is None:
+        guest = User(
+            username="guest",
+            hashed_password=get_password_hash("guest"),
+            role="Guest",
+        )
+        db.add(guest)
+        db.commit()
+        db.refresh(guest)
+    return Token(
+        access_token=create_access_token(guest.username, guest.role),
+        role=guest.role,
+        username=guest.username,
+        student_id=None,
     )
 
 @api_router.post("/auth/change-password")
@@ -163,95 +195,23 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Return current user info with role-specific linked entity."""
     result = {"id": user.id, "username": user.username, "role": user.role}
     if user.role == "Student":
-        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
+        student = _student_for_user(db, user)
         if student:
             result["linked_id"] = student.id
             result["fio"] = student.fio
     elif user.role == "Teacher":
-        teacher = db.scalar(select(Teacher).where(Teacher.email == f"{user.username}@uni.uz"))
+        teacher = db.scalar(select(Teacher).where(Teacher.user_id == user.id))
+        if not teacher:
+            teacher = db.scalar(select(Teacher).where(Teacher.email == f"{user.username}@uni.uz"))
         if teacher:
             result["linked_id"] = teacher.id
             result["fio"] = teacher.fio
-    return result
-
-
-# ─── Profile ─────────────────────────────────────────────────────────────────────
-
-@api_router.post("/profile/setup")
-def setup_profile(payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if user.role == "Student":
-        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
-        if student:
-            for key, value in payload.items():
-                if hasattr(student, key):
-                    setattr(student, key, value)
-            db.commit()
-            return {"ok": True}
-    elif user.role == "Teacher":
-        teacher = db.scalar(select(Teacher).where(Teacher.email == f"{user.username}@uni.uz"))
-        if teacher:
-            for key, value in payload.items():
-                if hasattr(teacher, key):
-                    setattr(teacher, key, value)
-            db.commit()
-            return {"ok": True}
-    raise HTTPException(status_code=404, detail="Profile not found")
-
-@api_router.put("/profile/update")
-def update_profile(payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if user.role == "Student":
-        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
-        if student:
-            for key, value in payload.items():
-                if hasattr(student, key):
-                    setattr(student, key, value)
-            db.commit()
-            return {"ok": True}
-    elif user.role == "Teacher":
-        teacher = db.scalar(select(Teacher).where(Teacher.email == f"{user.username}@uni.uz"))
-        if teacher:
-            for key, value in payload.items():
-                if hasattr(teacher, key):
-                    setattr(teacher, key, value)
-            db.commit()
-            return {"ok": True}
-    raise HTTPException(status_code=404, detail="Profile not found")
-
-
-@api_router.post("/auth/change-password")
-def change_password(payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    old_password = payload.get("old_password")
-    new_password = payload.get("new_password")
-    if not old_password or not new_password:
-        raise HTTPException(status_code=400, detail="Both old and new passwords are required")
-    
-    if not verify_password(old_password, user.hashed_password):
-        raise HTTPException(status_code=400, detail="Old password is incorrect")
-    
-    user.hashed_password = get_password_hash(new_password)
-    db.commit()
-    return {"ok": True}
-
-
-@api_router.get("/me")
-def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Return current user info with role-specific linked entity."""
-    result = {"id": user.id, "username": user.username, "role": user.role}
-    if user.role == "Student":
-        student = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
-        if student:
-            result["linked_id"] = student.id
-            result["fio"] = student.fio
-    elif user.role == "Teacher":
-        teacher = db.scalar(select(Teacher).where(Teacher.email == f"{user.username}@uni.uz"))
-        if teacher:
-            result["linked_id"] = teacher.id
-            result["fio"] = teacher.fio
+    elif user.role == "Guest":
+        result["fio"] = user.username
     return result
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────
-
 @api_router.get("/dashboard", response_model=DashboardStats, dependencies=[Depends(require_staff)])
 def dashboard(db: Session = Depends(get_db)):
     return DashboardStats(
@@ -439,7 +399,7 @@ def update_profile(
         raise HTTPException(status_code=400, detail="Администратору профиль не требуется")
 
     if user.role == "Student":
-        entity = db.scalar(select(Student).where(Student.email == f"{user.username}@msu.ru"))
+        entity = _student_for_user(db, user)
         if not entity:
             raise HTTPException(status_code=404, detail="Профиль студента не найден")
         if payload.fio is not None:
@@ -559,40 +519,85 @@ def teacher_schedule(teacher_id: int, week_id: int | None = None, db: Session = 
 
 # ─── Permissions ──────────────────────────────────────────────────────────────────
 
+@api_router.get("/permissions/me")
+def get_my_permissions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Flat list of permissions effectively granted to the current user
+    (role defaults with individual overrides applied). Admin always gets
+    everything. Used by the Flutter app to drive menu/UI visibility."""
+    if user.role == "Admin":
+        return {"permissions": list(ALL_PERMISSIONS)}
+
+    role_defaults = DEFAULT_ROLE_PERMISSIONS.get(user.role, set())
+    overrides = {
+        p.permission: p.is_granted
+        for p in db.scalars(select(UserPermission).where(UserPermission.user_id == user.id)).all()
+    }
+    effective = {
+        perm for perm in ALL_PERMISSIONS
+        if overrides.get(perm, perm in role_defaults)
+    }
+    return {"permissions": sorted(effective)}
+
 @api_router.get("/permissions/user/{userId}")
 def get_user_permissions(userId: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     # Only Admin can view other's permissions, others can view their own
     if user.role != "Admin" and user.id != userId:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    perms = db.scalars(select(UserPermission).where(UserPermission.user_id == userId)).all()
-    
-    # We return a map of permission -> is_granted
-    return {"permissions": [p for p in perms]}
 
-@api_router.put("/permissions")
-def update_user_permission(payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    target = db.scalar(select(User).where(User.id == userId))
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    overrides = {
+        p.permission: p.is_granted
+        for p in db.scalars(select(UserPermission).where(UserPermission.user_id == userId)).all()
+    }
+    role_defaults = DEFAULT_ROLE_PERMISSIONS.get(target.role, set())
+
+    permissions = [
+        {
+            "permission": perm,
+            "label": PERMISSION_LABELS.get(perm, perm),
+            "default_granted": perm in role_defaults,
+            "override": overrides.get(perm),
+        }
+        for perm in ALL_PERMISSIONS
+    ]
+    return {"permissions": permissions}
+
+
+@api_router.put("/permissions/{userId}")
+def update_user_permission(userId: int, payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role != "Admin":
         raise HTTPException(status_code=403, detail="Only administrators can manage permissions")
-    
-    userId = payload.get("userId")
+
     permission = payload.get("permission")
     is_granted = payload.get("is_granted")
-    
-    if not all([userId, permission, is_granted is not None]):
-        raise HTTPException(status_code=400, detail="userId, permission, and is_granted are required")
-    
+
+    if userId is None or not permission:
+        raise HTTPException(status_code=400, detail="userId and permission are required")
+    if permission not in ALL_PERMISSIONS:
+        raise HTTPException(status_code=400, detail="Unknown permission")
+
+    target = db.scalar(select(User).where(User.id == userId))
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
     perm = db.scalar(select(UserPermission).where(
-        UserPermission.user_id == userId, 
-        UserPermission.permission == permission
+        UserPermission.user_id == userId,
+        UserPermission.permission == permission,
     ))
-    
-    if perm:
+
+    if is_granted is None:
+        # Reset to role default: drop the override row if present.
+        if perm:
+            db.delete(perm)
+    elif perm:
         perm.is_granted = is_granted
     else:
         perm = UserPermission(user_id=userId, permission=permission, is_granted=is_granted)
         db.add(perm)
-    
+
     db.commit()
     return {"ok": True}
 

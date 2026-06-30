@@ -275,6 +275,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                           if (auth.isStudent) ...[
                             // Факультет
                             DropdownButtonFormField<int>(
+                              key: const ValueKey('faculty'),
                               initialValue:
                                   _faculties.any((f) => f['id'] == _facultyId)
                                   ? _facultyId
@@ -299,7 +300,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
                             // Направление — пересоздаём при смене факультета
                             DropdownButtonFormField<int>(
-                              key: ValueKey(_facultyId),
+                              key: ValueKey('speciality_$_facultyId'),
                               initialValue:
                                   _specialities.any(
                                     (s) => s['id'] == _specialityId,
@@ -327,7 +328,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                             // Курс — пересоздаём при смене специальности.
                             // Выбирается до группы, чтобы сузить список групп.
                             DropdownButtonFormField<int>(
-                              key: ValueKey(_specialityId),
+                              key: ValueKey('course_$_specialityId'),
                               initialValue: _course,
                               isExpanded: true,
                               decoration: const InputDecoration(

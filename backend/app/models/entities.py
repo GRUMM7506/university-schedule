@@ -44,6 +44,7 @@ class LessonType(IntEnum):
 class UserRole(StrEnum):
     admin = "Admin"
     teacher = "Teacher"
+    guest = "Guest"
 
 
 class Faculty(Base):
@@ -118,6 +119,9 @@ class Teacher(Base):
     phone: Mapped[str | None] = mapped_column(String(40))
     address: Mapped[str | None] = mapped_column(String(240))
     email: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+
+    user: Mapped["User"] = relationship(back_populates="teacher", uselist=False)
 
 
 class Student(Base):
@@ -130,8 +134,10 @@ class Student(Base):
     address: Mapped[str | None] = mapped_column(String(240))
     email: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     birth_date: Mapped[date] = mapped_column(Date, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
     group: Mapped[StudentGroup] = relationship(back_populates="students")
+    user: Mapped["User"] = relationship(back_populates="student")
 
 
 class DisciplineLoad(Base):
@@ -231,13 +237,16 @@ class Schedule(Base):
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint("role IN ('Admin', 'Teacher', 'Student')", name="ck_user_role"),)
+    __table_args__ = (CheckConstraint("role IN ('Admin', 'Teacher', 'Student', 'Guest')", name="ck_user_role"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     refresh_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    student: Mapped["Student"] = relationship(back_populates="user", uselist=False)
+    teacher: Mapped["Teacher"] = relationship(back_populates="user", uselist=False)
 
 
 class UserPermission(Base):

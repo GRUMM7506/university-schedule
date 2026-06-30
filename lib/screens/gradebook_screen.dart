@@ -14,7 +14,12 @@ class GradebookScreen extends StatefulWidget {
 
 class _GradebookScreenState extends State<GradebookScreen> {
   int? groupId;
+  int? facultyId;
+  int? specialityId;
+  int? course;
   List<Map<String, dynamic>> groups = [];
+  List<Map<String, dynamic>> faculties = [];
+  List<Map<String, dynamic>> specialities = [];
   List<Map<String, dynamic>> rawData = [];
   bool loading = true;
   String searchQuery = '';
@@ -30,8 +35,78 @@ class _GradebookScreenState extends State<GradebookScreen> {
   Future<void> _loadRefs() async {
     final service = context.read<AcademicService>();
     groups = await service.list('/groups');
-    if (groups.isNotEmpty) groupId = groups.first['id'] as int;
+    faculties = await service.list('/faculties');
+    specialities = await service.list('/specialities');
+    if (groups.isNotEmpty) {
+      final firstGroup = groups.first;
+      groupId = firstGroup['id'] as int;
+      final sId = _readInt(firstGroup['speciality_id']);
+      specialityId = sId;
+      course = _readInt(firstGroup['course']);
+      if (sId != null) {
+        for (final speciality in specialities) {
+          if (_readInt(speciality['id']) == sId) {
+            facultyId = _readInt(speciality['faculty_id']);
+            break;
+          }
+        }
+      }
+    } else if (faculties.isNotEmpty) {
+      facultyId = faculties.first['id'] as int;
+    }
     await _loadData();
+  }
+
+  List<Map<String, dynamic>> get _filteredSpecialities {
+    if (facultyId == null) return specialities;
+    return specialities
+        .where((s) => _readInt(s['faculty_id']) == facultyId)
+        .toList();
+  }
+
+  List<Map<String, dynamic>> get _filteredGroups {
+    return groups.where((group) {
+      final groupSpecialityId = _readInt(group['speciality_id']);
+      final groupFacultyId = _facultyIdForSpeciality(groupSpecialityId);
+      final groupCourse = _readInt(group['course']);
+      return (facultyId == null || groupFacultyId == facultyId) &&
+          (specialityId == null || groupSpecialityId == specialityId) &&
+          (course == null || groupCourse == course);
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> get _courseOptions {
+    final courses = groups
+        .where((group) {
+          final groupSpecialityId = _readInt(group['speciality_id']);
+          final groupFacultyId = _facultyIdForSpeciality(groupSpecialityId);
+          return (facultyId == null || groupFacultyId == facultyId) &&
+              (specialityId == null || groupSpecialityId == specialityId);
+        })
+        .map((group) => _readInt(group['course']))
+        .whereType<int>()
+        .toSet()
+        .toList()
+      ..sort();
+    return courses
+        .map((value) => {'id': value, 'name': '$value курс'})
+        .toList();
+  }
+
+  int? _facultyIdForSpeciality(int? specialityId) {
+    if (specialityId == null) return null;
+    for (final speciality in specialities) {
+      if (_readInt(speciality['id']) == specialityId) {
+        return _readInt(speciality['faculty_id']);
+      }
+    }
+    return null;
+  }
+
+  int? _readInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value');
   }
 
   Future<void> _loadData() async {
@@ -83,71 +158,109 @@ class _GradebookScreenState extends State<GradebookScreen> {
         children: [
           GlassPanel(
             padding: const EdgeInsets.all(20),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF8B5CF6).withValues(alpha: .12),
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  child: const Icon(
-                    Icons.menu_book_outlined,
-                    color: Color(0xFF8B5CF6),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Журнал успеваемости',
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w900),
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(13),
                       ),
-                      Text(
-                        'Оценки студентов по дисциплинам',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                      child: const Icon(
+                        Icons.menu_book_outlined,
+                        color: Color(0xFF8B5CF6),
                       ),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  width: 220,
-                  child: DropdownButtonFormField<int>(
-                    initialValue: groupId,
-                    decoration: const InputDecoration(
-                      labelText: 'Группа',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      isDense: true,
                     ),
-                    items: groups
-                        .map(
-                          (g) => DropdownMenuItem<int>(
-                            value: g['id'] as int,
-                            child: Text('${g['name']}'),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Журнал успеваемости',
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(fontWeight: FontWeight.w900),
                           ),
-                        )
-                        .toList(),
-                    onChanged: (v) {
-                      groupId = v;
-                      _loadData();
-                    },
-                  ),
+                          Text(
+                            'Оценки студентов по дисциплинам',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                IconButton.filled(
-                  tooltip: 'Обновить',
-                  onPressed: _loadData,
-                  icon: const Icon(Icons.refresh_rounded),
+                const SizedBox(height: 18),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _buildDropdown(
+                      'Факультет',
+                      facultyId,
+                      faculties,
+                      (v) => setState(() {
+                        facultyId = v;
+                        if (!_filteredSpecialities.any(
+                          (s) => _readInt(s['id']) == specialityId,
+                        )) {
+                          specialityId = null;
+                        }
+                        if (!_courseOptions.any((c) => c['id'] == course)) {
+                          course = null;
+                        }
+                        groupId = null;
+                      }),
+                      allLabel: 'Все факультеты',
+                      width: 240,
+                    ),
+                    _buildDropdown(
+                      'Направление',
+                      specialityId,
+                      _filteredSpecialities,
+                      (v) => setState(() {
+                        specialityId = v;
+                        if (!_courseOptions.any((c) => c['id'] == course)) {
+                          course = null;
+                        }
+                        groupId = null;
+                      }),
+                      allLabel: 'Все направления',
+                      width: 260,
+                    ),
+                    // _buildDropdown(
+                    //   'Курс',
+                    //   course,
+                    //   _courseOptions,
+                    //   (v) => setState(() {
+                    //     course = v;
+                    //     groupId = null;
+                    //   }),
+                    //   allLabel: 'Все курсы',
+                    //   width: 160,
+                    // ),
+                    _buildDropdown(
+                      'Группа',
+                      groupId,
+                      _filteredGroups,
+                      (v) => setState(() => groupId = v),
+                      allLabel: 'Все группы',
+                      width: 220,
+                    ),
+                    const SizedBox(width: 12),
+                    IconButton.filled(
+                      tooltip: 'Обновить',
+                      onPressed: _loadData,
+                      icon: const Icon(Icons.refresh_rounded),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -177,6 +290,59 @@ class _GradebookScreenState extends State<GradebookScreen> {
     );
   }
 
+  Widget _buildDropdown(
+    String label,
+    int? value,
+    List<Map<String, dynamic>> data,
+    ValueChanged<int?> onChanged, {
+    String labelKey = 'name',
+    double width = 200,
+    String? allLabel,
+  }) {
+    return SizedBox(
+      width: width,
+      child: DropdownButtonFormField<int>(
+        initialValue: data.any((e) => e['id'] == value) ? value : null,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
+          isDense: true,
+        ),
+        menuMaxHeight: 320,
+        items: [
+          if (allLabel != null)
+            DropdownMenuItem<int>(value: null, child: Text(allLabel)),
+          ...data.map(
+            (e) => DropdownMenuItem<int>(
+              value: _readInt(e['id']),
+              child: Text(
+                '${e[labelKey] ?? e['name']}',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ],
+        selectedItemBuilder: allLabel == null
+            ? null
+            : (_) => [
+                Text(allLabel, overflow: TextOverflow.ellipsis),
+                ...data.map(
+                  (e) => Text(
+                    '${e[labelKey] ?? e['name']}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+        onChanged: onChanged,
+      ),
+    );
+  }
+
   Widget _buildTable(double width) {
     final pivot = _buildPivot();
     final subjects = _getSubjects(pivot).toList()..sort();
@@ -201,139 +367,139 @@ class _GradebookScreenState extends State<GradebookScreen> {
                 context,
               ).colorScheme.primaryContainer.withValues(alpha: .15),
             ),
-          columns: [
-            const DataColumn(
-              label: Text('№', style: TextStyle(fontWeight: FontWeight.w800)),
-            ),
-            const DataColumn(
-              label: Text(
-                'Студент',
-                style: TextStyle(fontWeight: FontWeight.w800),
+            columns: [
+              const DataColumn(
+                label: Text('№', style: TextStyle(fontWeight: FontWeight.w800)),
               ),
-            ),
-            const DataColumn(
-              label: Text(
-                'Группа',
-                style: TextStyle(fontWeight: FontWeight.w800),
+              const DataColumn(
+                label: Text(
+                  'Студент',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
               ),
-            ),
-            for (final discId in subjects)
-              DataColumn(
-                label: SizedBox(
-                  width: 90,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(
-                        _subjectShortName(pivot, discId),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
+              const DataColumn(
+                label: Text(
+                  'Группа',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              for (final discId in subjects)
+                DataColumn(
+                  label: SizedBox(
+                    width: 90,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          _subjectShortName(pivot, discId),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
+              const DataColumn(
+                label: Text(
+                  'Ср. балл',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
               ),
-            const DataColumn(
-              label: Text(
-                'Ср. балл',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
-          ],
-          rows: students.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final studentData = entry.value.value;
-            final marks = <int>[];
-            for (final discId in subjects) {
-              if (studentData.containsKey(discId)) {
-                marks.add(studentData[discId]['mark'] as int);
+            ],
+            rows: students.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final studentData = entry.value.value;
+              final marks = <int>[];
+              for (final discId in subjects) {
+                if (studentData.containsKey(discId)) {
+                  marks.add(studentData[discId]['mark'] as int);
+                }
               }
-            }
-            final avg = marks.isEmpty
-                ? 0.0
-                : marks.reduce((a, b) => a + b) / marks.length;
+              final avg = marks.isEmpty
+                  ? 0.0
+                  : marks.reduce((a, b) => a + b) / marks.length;
 
-            return DataRow(
-              cells: [
-                DataCell(
-                  Text(
-                    '${idx + 1}',
-                    style: const TextStyle(color: Colors.grey),
+              return DataRow(
+                cells: [
+                  DataCell(
+                    Text(
+                      '${idx + 1}',
+                      style: const TextStyle(color: Colors.grey),
+                    ),
                   ),
-                ),
-                DataCell(
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 14,
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: .12),
-                        child: Text(
-                          studentData['_fio'].toString()[0],
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 12,
+                  DataCell(
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: .12),
+                          child: Text(
+                            studentData['_fio'].toString()[0],
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${studentData['_fio']}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
-                DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.secondary.withValues(alpha: .1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '${studentData['_group']}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                      ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${studentData['_fio']}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                for (final discId in subjects)
                   DataCell(
-                    Center(
-                      child: studentData.containsKey(discId)
-                          ? _MarkBadge(
-                              mark: studentData[discId]['mark'] as int,
-                              compact: true,
-                            )
-                          : const Text(
-                              '—',
-                              style: TextStyle(color: Colors.grey),
-                            ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.secondary.withValues(alpha: .1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${studentData['_group']}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                   ),
-                DataCell(_AvgBadge(avg: avg)),
-              ],
-            );
-          }).toList(),
+                  for (final discId in subjects)
+                    DataCell(
+                      Center(
+                        child: studentData.containsKey(discId)
+                            ? _MarkBadge(
+                                mark: studentData[discId]['mark'] as int,
+                                compact: true,
+                              )
+                            : const Text(
+                                '—',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                      ),
+                    ),
+                  DataCell(_AvgBadge(avg: avg)),
+                ],
+              );
+            }).toList(),
+          ),
         ),
       ),
-    ),
     );
   }
 

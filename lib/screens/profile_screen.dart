@@ -705,7 +705,7 @@ class _AvatarWidget extends StatelessWidget {
       ),
       child: Center(
         child: Text(
-          username.isNotEmpty ? username[0].toUpperCase() : '?',
+          username.isNotEmpty ? username[0].toUpperCase() : 'Guest',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w900,

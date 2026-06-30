@@ -6,56 +6,113 @@ import '../models/entities.dart';
 import '../providers/auth_provider.dart';
 import 'glass.dart';
 
-class AppShell extends StatelessWidget {
+/// A single, flat navigation destination (route the drawer can go to).
+typedef _NavEntry = ({String title, String route, IconData icon});
+
+class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.child});
 
   final Widget child;
 
-  List<(String, String, IconData)> _buildEntries(AuthProvider auth) {
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  bool _dbEditorExpanded = true;
+
+  List<_NavEntry> _flatEntries(AuthProvider auth) {
     if (auth.isStudent) {
-      return const [
-        ('Мой портал', '/portal', Icons.home_outlined),
-        ('Профиль', '/profile', Icons.account_circle_outlined),
+      final entries = <_NavEntry>[
+        (title: 'Мой портал', route: '/portal', icon: Icons.home_outlined),
       ];
+      if (auth.hasPermission('gradebook.view')) {
+        entries.add((title: 'Журнал', route: '/gradebook', icon: Icons.menu_book_outlined));
+      }
+      if (auth.hasPermission('schedule.view')) {
+        entries.add((title: 'Расписание', route: '/schedule', icon: Icons.calendar_month_outlined));
+      }
+      if (auth.hasPermission('attendance.view')) {
+        entries.add((title: 'Посещаемость', route: '/attendance', icon: Icons.how_to_reg_outlined));
+      }
+      if (auth.hasPermission('performance.view')) {
+        entries.add((title: 'Успеваемость', route: '/performance', icon: Icons.school_outlined));
+      }
+      entries.add((title: 'Профиль', route: '/profile', icon: Icons.account_circle_outlined));
+      return entries;
     }
 
-    if (auth.isTeacher) {
-      return const [
-        ('Панель управления', '/', Icons.dashboard_outlined),
-        ('Журнал', '/gradebook', Icons.menu_book_outlined),
-        ('Расписание', '/schedule', Icons.calendar_month_outlined),
-        ('Посещаемость', '/attendance', Icons.how_to_reg_outlined),
-        ('Успеваемость', '/performance', Icons.school_outlined),
-        ('Профиль', '/profile', Icons.manage_accounts_outlined),
+    if (auth.isGuest) {
+      final entries = <_NavEntry>[
+        (title: 'Панель управления', route: '/', icon: Icons.dashboard_outlined),
       ];
+      if (auth.hasPermission('schedule.view')) {
+        entries.add((title: 'Расписание', route: '/schedule', icon: Icons.calendar_month_outlined));
+      }
+      return entries;
     }
 
-    // Admin — full menu
+    // Teacher and Admin share the same permission-driven menu shape;
+    // Admin simply has every permission granted, so nothing is hidden.
+    final entries = <_NavEntry>[
+      (title: 'Панель управления', route: '/', icon: Icons.dashboard_outlined),
+    ];
+    if (auth.hasPermission('gradebook.view')) {
+      entries.add((title: 'Журнал', route: '/gradebook', icon: Icons.menu_book_outlined));
+    }
+    if (auth.hasPermission('schedule.view')) {
+      entries.add((title: 'Расписание', route: '/schedule', icon: Icons.calendar_month_outlined));
+    }
+    if (auth.hasPermission('attendance.view')) {
+      entries.add((title: 'Посещаемость', route: '/attendance', icon: Icons.how_to_reg_outlined));
+    }
+    if (auth.hasPermission('performance.view')) {
+      entries.add((title: 'Успеваемость', route: '/performance', icon: Icons.school_outlined));
+    }
+    if (auth.hasPermission('users.manage')) {
+      entries.add((title: 'Пользователи', route: '/users-admin', icon: Icons.admin_panel_settings_outlined));
+    }
+    entries.add((title: 'Профиль', route: '/profile', icon: Icons.manage_accounts_outlined));
+    return entries;
+  }
+
+  /// Reference-data entries (faculties..execution) the user can see,
+  /// grouped under one collapsible "Редактор БД" item.
+  List<_NavEntry> _dbEditorEntries(AuthProvider auth) {
+    if (auth.isStudent || auth.isGuest) return const [];
     return [
-      ('Панель управления', '/', Icons.dashboard_outlined),
-      ('Журнал', '/gradebook', Icons.menu_book_outlined),
-      ...entityDefinitions.map(
-        (e) => (
-          e.title,
-          e.route,
-          entityIcons[e.route] ?? Icons.table_chart_outlined,
-        ),
-      ),
-      ('Расписание', '/schedule', Icons.calendar_month_outlined),
-      ('Посещаемость', '/attendance', Icons.how_to_reg_outlined),
-      ('Успеваемость', '/performance', Icons.school_outlined),
-      ('Пользователи', '/users-admin', Icons.admin_panel_settings_outlined),
-      ('Профиль', '/profile', Icons.manage_accounts_outlined),
+      for (final e in entityDefinitions)
+        if (auth.hasPermission(auth.permissionForRoute(e.route) ?? '${e.route.replaceFirst('/', '')}.view'))
+          (
+            title: e.title,
+            route: e.route,
+            icon: entityIcons[e.route] ?? Icons.table_chart_outlined,
+          ),
     ];
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final entries = _buildEntries(auth);
+    final flatEntries = _flatEntries(auth);
+    final dbEntries = _dbEditorEntries(auth);
     final currentPath = GoRouterState.of(context).uri.path;
-    final selectedIndex = entries.indexWhere((e) => e.$2 == currentPath);
     final compact = MediaQuery.sizeOf(context).width < 980;
+
+    void navigate(String route) {
+      if (compact) Navigator.of(context).maybePop();
+      context.go(route);
+    }
+
+    Widget navContent() => _NavigationContent(
+          flatEntries: flatEntries,
+          dbEntries: dbEntries,
+          currentPath: currentPath,
+          auth: auth,
+          dbEditorExpanded: _dbEditorExpanded,
+          onToggleDbEditor: () => setState(() => _dbEditorExpanded = !_dbEditorExpanded),
+          onSelected: navigate,
+        );
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -90,17 +147,7 @@ class AppShell extends StatelessWidget {
           ? Drawer(
               backgroundColor: Colors.transparent,
               child: AppGlassBackground(
-                child: SafeArea(
-                  child: _NavigationContent(
-                    entries: entries,
-                    selectedIndex: selectedIndex,
-                    auth: auth,
-                    onSelected: (index) {
-                      Navigator.of(context).pop();
-                      context.go(entries[index].$2);
-                    },
-                  ),
-                ),
+                child: SafeArea(child: navContent()),
               ),
             )
           : null,
@@ -116,16 +163,11 @@ class AppShell extends StatelessWidget {
                     width: 268,
                     child: GlassPanel(
                       padding: EdgeInsets.zero,
-                      child: _NavigationContent(
-                        entries: entries,
-                        selectedIndex: selectedIndex,
-                        auth: auth,
-                        onSelected: (index) => context.go(entries[index].$2),
-                      ),
+                      child: navContent(),
                     ),
                   ),
                 ),
-              Expanded(child: child),
+              Expanded(child: widget.child),
             ],
           ),
         ),
@@ -148,7 +190,7 @@ class _RoleBadge extends StatelessWidget {
         Icons.cast_for_education_outlined,
       ),
       'Student' => ('Студент', const Color(0xFF10B981), Icons.school_outlined),
-      _ => ('?', Colors.grey, Icons.person_outlined),
+      _ => ('Гость', Colors.grey, Icons.person_outlined),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -178,23 +220,30 @@ class _RoleBadge extends StatelessWidget {
 
 class _NavigationContent extends StatelessWidget {
   const _NavigationContent({
-    required this.entries,
-    required this.selectedIndex,
+    required this.flatEntries,
+    required this.dbEntries,
+    required this.currentPath,
     required this.onSelected,
     required this.auth,
+    required this.dbEditorExpanded,
+    required this.onToggleDbEditor,
   });
 
-  final List<(String, String, IconData)> entries;
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
+  final List<_NavEntry> flatEntries;
+  final List<_NavEntry> dbEntries;
+  final String currentPath;
+  final ValueChanged<String> onSelected;
   final AuthProvider auth;
+  final bool dbEditorExpanded;
+  final VoidCallback onToggleDbEditor;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return NavigationDrawer(
-      selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-      onDestinationSelected: onSelected,
+    final dbEditorActive = dbEntries.any((e) => e.route == currentPath);
+
+    return ListView(
+      padding: EdgeInsets.zero,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 22, 16, 16),
@@ -230,14 +279,99 @@ class _NavigationContent extends StatelessWidget {
         ),
         const Divider(height: 1, indent: 20, endIndent: 20),
         const SizedBox(height: 4),
-        for (final entry in entries)
-          NavigationDrawerDestination(
-            icon: Icon(entry.$3),
-            selectedIcon: Icon(entry.$3),
-            label: Text(entry.$1),
+        for (final entry in flatEntries)
+          _NavTile(
+            icon: entry.icon,
+            label: entry.title,
+            selected: entry.route == currentPath,
+            onTap: () => onSelected(entry.route),
           ),
+        if (dbEntries.isNotEmpty) ...[
+          _NavTile(
+            icon: Icons.storage_outlined,
+            label: 'Редактор БД',
+            selected: dbEditorActive && !dbEditorExpanded,
+            trailing: Icon(
+              dbEditorExpanded ? Icons.expand_less : Icons.expand_more,
+              size: 20,
+              color: scheme.onSurfaceVariant,
+            ),
+            onTap: onToggleDbEditor,
+          ),
+          if (dbEditorExpanded)
+            for (final entry in dbEntries)
+              _NavTile(
+                icon: entry.icon,
+                label: entry.title,
+                selected: entry.route == currentPath,
+                indent: true,
+                onTap: () => onSelected(entry.route),
+              ),
+        ],
         const SizedBox(height: 8),
       ],
+    );
+  }
+}
+
+/// A single drawer row. Built manually (instead of
+/// NavigationDrawerDestination) so it can render at an indent level and
+/// carry a trailing expand/collapse chevron for the "Редактор БД" group.
+class _NavTile extends StatelessWidget {
+  const _NavTile({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.trailing,
+    this.indent = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Widget? trailing;
+  final bool indent;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(indent ? 32 : 12, 2, 12, 2),
+      child: Material(
+        color: selected ? scheme.secondaryContainer : Colors.transparent,
+        borderRadius: BorderRadius.circular(28),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(28),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: selected ? scheme.onSecondaryContainer : scheme.onSurface,
+                    ),
+                  ),
+                ),
+                if (trailing != null) trailing!,
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

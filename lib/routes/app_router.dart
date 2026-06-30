@@ -35,23 +35,35 @@ GoRouter buildRouter(
       // stored refresh token, don't redirect anywhere yet — show a splash.
       if (auth.restoring) return null;
 
-      final loggingIn = state.uri.path == '/login';
-      final setupProfile = state.uri.path == '/profile-setup';
+      final path = state.uri.path;
+      final loggingIn = path == '/login';
+      final setupProfile = path == '/profile-setup';
+
+      if (auth.isGuest) {
+        final canAccess = path == '/schedule' ||
+            (path == '/' && auth.hasPermission('dashboard.view'));
+        return canAccess ? null : '/schedule';
+      }
 
       if (!auth.isAuthenticated) return loggingIn ? null : '/login';
 
-      if (auth.linkedId == null && !auth.isAdmin) {
+      if (auth.linkedId == null && !auth.isAdmin && !auth.isGuest) {
         return setupProfile ? null : '/profile-setup';
       }
 
-      if (loggingIn || setupProfile) {
-        if (auth.isStudent) return '/portal';
-        return '/';
-      }
+      // Each role's "home" once logged in.
+      final home = auth.isStudent ? '/portal' : '/';
 
-      if (!auth.isStudent && state.uri.path == '/portal') return '/';
-      if (auth.isStudent && _isAdminRoute(state.uri.path)) return '/portal';
-      if (!auth.isAdmin && state.uri.path == '/users-admin') return '/';
+      if (loggingIn || setupProfile) return home;
+
+      if (!auth.isStudent && path == '/portal') return '/';
+      if (auth.isStudent && path == '/') return '/portal';
+
+      // Permission-gated routes: blocks direct URL entry to a screen the
+      // user's menu wouldn't show them (e.g. an admin revoked
+      // 'attendance.view' for a teacher who still types /attendance).
+      if (!auth.canAccessRoute(path)) return home;
+
       return null;
     },
     routes: [
@@ -114,7 +126,7 @@ GoRouter buildRouter(
             builder: (context, state) => const ProfileScreen(),
           ),
 
-          // User management (admin only)
+          // User management (gated by users.manage permission)
           GoRoute(
             path: '/users-admin',
             builder: (context, state) => const UserManagementScreen(),
@@ -130,7 +142,8 @@ GoRouter buildRouter(
             builder: (context, state) => const StudentPortalScreen(),
           ),
 
-          // CRUD entity routes (admin only)
+          // Reference-data CRUD routes — access is gated per-route by
+          // permission via auth.canAccessRoute in the redirect above.
           for (final definition in entityDefinitions)
             GoRoute(
               path: definition.route,
@@ -147,24 +160,4 @@ GoRouter buildRouter(
       ),
     ],
   );
-}
-
-bool _isAdminRoute(String path) {
-  const adminRoutes = [
-    '/faculties',
-    '/specialities',
-    '/groups',
-    '/students',
-    '/teachers',
-    '/subjects',
-    '/disciplines',
-    '/classrooms',
-    '/study-weeks',
-    '/execution',
-    '/attendance',
-    '/performance',
-    '/users-admin',
-    '/gradebook',
-  ];
-  return adminRoutes.contains(path);
 }

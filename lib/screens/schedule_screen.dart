@@ -6,6 +6,7 @@ import '../models/entities.dart';
 import '../providers/auth_provider.dart';
 import '../services/academic_service.dart';
 import '../widgets/glass.dart';
+import '../widgets/permission_gate.dart';
 import '../widgets/schedule_form_dialog.dart';
 
 class ScheduleScreen extends StatefulWidget {
@@ -270,12 +271,14 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                     ),
                   ),
                 ),
-                if (context.watch<AuthProvider>().isAdmin)
-                  FilledButton.icon(
+                PermissionGate(
+                  permission: 'schedule.edit',
+                  child: FilledButton.icon(
                     onPressed: _openForm,
                     icon: const Icon(Icons.add),
                     label: const Text('Добавить'),
                   ),
+                ),
                 const SizedBox(width: 12),
                 // View toggle
                 Container(
@@ -495,8 +498,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                 dayFull: _dayNamesFull[day],
                 items: items.where((e) => e['day_num'] == day).toList(),
                 pairTimes: _pairTimes,
-                onEdit: context.read<AuthProvider>().isAdmin ? _openForm : null,
-                onDelete: context.read<AuthProvider>().isAdmin ? _delete : null,
+                onEdit: context.read<AuthProvider>().hasPermission('schedule.edit') ? _openForm : null,
+                onDelete: context.read<AuthProvider>().hasPermission('schedule.edit') ? _delete : null,
               ),
             ),
           ),
@@ -513,8 +516,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
             dayName: _dayNamesFull[day],
             items: items.where((e) => e['day_num'] == day).toList(),
             pairTimes: _pairTimes,
-            onEdit: context.read<AuthProvider>().isAdmin ? _openForm : null,
-            onDelete: context.read<AuthProvider>().isAdmin ? _delete : null,
+            onEdit: context.read<AuthProvider>().hasPermission('schedule.edit') ? _openForm : null,
+            onDelete: context.read<AuthProvider>().hasPermission('schedule.edit') ? _delete : null,
           ),
       ],
     );
