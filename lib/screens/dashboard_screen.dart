@@ -172,6 +172,37 @@ class _AdminDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final quickActions = [
+      if (auth.hasPermission('students.edit'))
+        const _QuickActionCard(
+          icon: Icons.person_add_outlined,
+          label: 'Добавить студента',
+          color: Color(0xFF3B82F6),
+          route: '/students',
+        ),
+      if (auth.hasPermission('attendance.edit'))
+        const _QuickActionCard(
+          icon: Icons.how_to_reg_outlined,
+          label: 'Отметить посещаемость',
+          color: Color(0xFF10B981),
+          route: '/attendance',
+        ),
+      if (auth.hasPermission('schedule.view'))
+        const _QuickActionCard(
+          icon: Icons.calendar_month_outlined,
+          label: 'Расписание',
+          color: Color(0xFFF59E0B),
+          route: '/schedule',
+        ),
+      if (auth.hasPermission('gradebook.view'))
+        const _QuickActionCard(
+          icon: Icons.menu_book_outlined,
+          label: 'Журнал оценок',
+          color: Color(0xFF8B5CF6),
+          route: '/gradebook',
+        ),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -216,44 +247,17 @@ class _AdminDashboard extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 28),
-        Text(
-          'Быстрые действия',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 14,
-          runSpacing: 14,
-          children: const [
-            _QuickActionCard(
-              icon: Icons.person_add_outlined,
-              label: 'Добавить студента',
-              color: Color(0xFF3B82F6),
-              route: '/students',
-            ),
-            _QuickActionCard(
-              icon: Icons.how_to_reg_outlined,
-              label: 'Отметить посещаемость',
-              color: Color(0xFF10B981),
-              route: '/attendance',
-            ),
-            _QuickActionCard(
-              icon: Icons.calendar_month_outlined,
-              label: 'Расписание',
-              color: Color(0xFFF59E0B),
-              route: '/schedule',
-            ),
-            _QuickActionCard(
-              icon: Icons.menu_book_outlined,
-              label: 'Журнал оценок',
-              color: Color(0xFF8B5CF6),
-              route: '/gradebook',
-            ),
-          ],
-        ),
+        if (quickActions.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          Text(
+            'Быстрые действия',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 14),
+          Wrap(spacing: 14, runSpacing: 14, children: quickActions),
+        ],
         const SizedBox(height: 28),
         _InfoBanners(),
       ],

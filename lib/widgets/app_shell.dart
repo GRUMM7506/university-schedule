@@ -30,13 +30,13 @@ class _AppShellState extends State<AppShell> {
         entries.add((title: 'Журнал', route: '/gradebook', icon: Icons.menu_book_outlined));
       }
       if (auth.hasPermission('schedule.view')) {
-        entries.add((title: 'Расписание', route: '/schedule', icon: Icons.calendar_month_outlined));
+        entries.add((title: 'Расписание', route: '/my-schedule', icon: Icons.calendar_month_outlined));
       }
       if (auth.hasPermission('attendance.view')) {
-        entries.add((title: 'Посещаемость', route: '/attendance', icon: Icons.how_to_reg_outlined));
+        entries.add((title: 'Посещаемость', route: '/my-attendance', icon: Icons.how_to_reg_outlined));
       }
       if (auth.hasPermission('performance.view')) {
-        entries.add((title: 'Успеваемость', route: '/performance', icon: Icons.school_outlined));
+        entries.add((title: 'Успеваемость', route: '/my-grades', icon: Icons.school_outlined));
       }
       entries.add((title: 'Профиль', route: '/profile', icon: Icons.account_circle_outlined));
       return entries;

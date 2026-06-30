@@ -58,6 +58,11 @@ GoRouter buildRouter(
 
       if (!auth.isStudent && path == '/portal') return '/';
       if (auth.isStudent && path == '/') return '/portal';
+      if (auth.isStudent && path == '/schedule') return '/my-schedule';
+      if (auth.isStudent && path == '/attendance') return '/my-attendance';
+      if (auth.isStudent && (path == '/performance' || path == '/gradebook')) {
+        return '/my-grades';
+      }
 
       // Permission-gated routes: blocks direct URL entry to a screen the
       // user's menu wouldn't show them (e.g. an admin revoked
@@ -133,6 +138,10 @@ GoRouter buildRouter(
           ),
 
           // Student aliases (same screens but for student nav)
+          GoRoute(
+            path: '/my-schedule',
+            builder: (context, state) => const StudentPortalScreen(),
+          ),
           GoRoute(
             path: '/my-grades',
             builder: (context, state) => const StudentPortalScreen(),

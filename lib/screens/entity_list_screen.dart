@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/entity_model.dart';
+import '../providers/auth_provider.dart';
 import '../providers/entity_provider.dart';
 import '../services/academic_service.dart';
 import '../widgets/entity_form_dialog.dart';
@@ -108,6 +109,11 @@ class _EntityListScreenState extends State<EntityListScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<EntityProvider>();
+    final auth = context.watch<AuthProvider>();
+    final editPermission =
+        auth.permissionForRoute(widget.definition.route)?.replaceFirst('.view', '.edit') ??
+        '${widget.definition.route.replaceFirst('/', '')}.edit';
+    final canEdit = auth.hasPermission(editPermission);
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -126,11 +132,12 @@ class _EntityListScreenState extends State<EntityListScreen> {
                             ?.copyWith(fontWeight: FontWeight.w900),
                       ),
                     ),
-                    FilledButton.icon(
-                      onPressed: () => _openForm(context),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Добавить'),
-                    ),
+                    if (canEdit)
+                      FilledButton.icon(
+                        onPressed: () => _openForm(context),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Добавить'),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -170,10 +177,11 @@ class _EntityListScreenState extends State<EntityListScreen> {
                               provider.load();
                             },
                           ),
-                        const DataColumn2(
-                          label: Text('Действия'),
-                          size: ColumnSize.S,
-                        ),
+                        if (canEdit)
+                          const DataColumn2(
+                            label: Text('Действия'),
+                            size: ColumnSize.S,
+                          ),
                       ],
                       rows: [
                         for (final item in provider.items)
@@ -189,22 +197,23 @@ class _EntityListScreenState extends State<EntityListScreen> {
                                     ),
                                   ),
                                 ),
-                              DataCell(
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      tooltip: 'Редактировать',
-                                      onPressed: () => _openForm(context, item),
-                                      icon: const Icon(Icons.edit_outlined),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Удалить',
-                                      onPressed: () => provider.remove(item.id),
-                                      icon: const Icon(Icons.delete_outline),
-                                    ),
-                                  ],
+                              if (canEdit)
+                                DataCell(
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        tooltip: 'Редактировать',
+                                        onPressed: () => _openForm(context, item),
+                                        icon: const Icon(Icons.edit_outlined),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Удалить',
+                                        onPressed: () => provider.remove(item.id),
+                                        icon: const Icon(Icons.delete_outline),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
                             ],
                           ),
                       ],

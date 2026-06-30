@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/entities.dart';
+import '../providers/auth_provider.dart';
 import '../services/academic_service.dart';
 
 class PerformanceScreen extends StatefulWidget {
@@ -208,6 +209,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
     if (loading) {
       return const Center(child: CircularProgressIndicator());
     }
+    final canEdit = context.watch<AuthProvider>().hasPermission('performance.edit');
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
@@ -292,7 +294,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                               child: Text('${g['name']}', overflow: TextOverflow.ellipsis),
                             ))
                         .toList(),
-                    onChanged: _changeGroup,
+                    onChanged: canEdit ? _changeGroup : null,
                   ),
                 ),
                 SizedBox(
@@ -300,6 +302,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                   child: _SearchableStudentField(
                     students: students,
                     value: studentId,
+                    enabled: canEdit,
                     onChanged: (v) => setState(() => studentId = v),
                   ),
                 ),
@@ -321,10 +324,12 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                     disciplineId,
                     _groupDisciplines,
                     'displayName',
-                    (v) => setState(() {
-                      disciplineId = v;
-                      _syncTeacherFromDiscipline();
-                    }),
+                    canEdit
+                        ? (v) => setState(() {
+                              disciplineId = v;
+                              _syncTeacherFromDiscipline();
+                            })
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -335,7 +340,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                     teacherId,
                     teachers,
                     'fio',
-                    (v) => setState(() => teacherId = v),
+                    canEdit ? (v) => setState(() => teacherId = v) : null,
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -349,7 +354,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                       DropdownMenuItem(value: 0, child: Text('Зачет')),
                       DropdownMenuItem(value: 1, child: Text('Экзамен')),
                     ],
-                    onChanged: _changeControlType,
+                    onChanged: canEdit ? _changeControlType : null,
                   ),
                 ),
               ],
@@ -371,7 +376,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                       .map((e) => ButtonSegment(value: e, label: Text('$e')))
                       .toList(),
                   selected: {tourNum},
-                  onSelectionChanged: (value) => setState(() => tourNum = value.first),
+                  onSelectionChanged: canEdit ? (value) => setState(() => tourNum = value.first) : null,
                 ),
               ],
             ),
@@ -390,7 +395,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                   return ChoiceChip(
                     label: Text(label),
                     selected: selected,
-                    onSelected: (_) => setState(() => mark = value),
+                    onSelected: canEdit ? (_) => setState(() => mark = value) : null,
                   );
                 }).toList(),
               )
@@ -404,27 +409,28 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                   return ChoiceChip(
                     label: Text(e.value),
                     selected: selected,
-                    onSelected: (_) => setState(() => mark = value),
+                    onSelected: canEdit ? (_) => setState(() => mark = value) : null,
                   );
                 }).toList(),
               ),
           ],
         ),
         const SizedBox(height: 24),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            onPressed: saving ? null : _save,
-            icon: saving
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Icon(Icons.save_outlined),
-            label: const Text('Сохранить'),
+        if (canEdit)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: saving ? null : _save,
+              icon: saving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.save_outlined),
+              label: const Text('Сохранить'),
+            ),
           ),
-        ),
       ],
     );
   }
@@ -433,7 +439,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
     String label,
     int? value,
     List<Map<String, dynamic>> data,
-    ValueChanged<int?> onChanged, {
+    ValueChanged<int?>? onChanged, {
     required String allLabel,
   }) {
     return DropdownButtonFormField<int>(
@@ -459,7 +465,7 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
     int? value,
     List<Map<String, dynamic>> data,
     String display,
-    ValueChanged<int?> onChanged,
+    ValueChanged<int?>? onChanged,
   ) {
     return DropdownButtonFormField<int>(
       initialValue: data.any((e) => e['id'] == value) ? value : null,
@@ -528,11 +534,13 @@ class _SearchableStudentField extends StatelessWidget {
   const _SearchableStudentField({
     required this.students,
     required this.value,
+    required this.enabled,
     required this.onChanged,
   });
 
   final List<Map<String, dynamic>> students;
   final int? value;
+  final bool enabled;
   final ValueChanged<int?> onChanged;
 
   @override
@@ -545,7 +553,7 @@ class _SearchableStudentField extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: students.isEmpty ? null : () => _openPicker(context),
+      onTap: !enabled || students.isEmpty ? null : () => _openPicker(context),
       child: InputDecorator(
         decoration: const InputDecoration(
           labelText: 'Студент',

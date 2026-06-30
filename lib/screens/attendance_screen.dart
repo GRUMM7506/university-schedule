@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/entities.dart';
+import '../providers/auth_provider.dart';
 import '../services/academic_service.dart';
 
 class AttendanceScreen extends StatefulWidget {
@@ -243,6 +244,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Widget build(BuildContext context) {
     final counts = _counts;
     final visible = _visibleStudents;
+    final canEdit = context.watch<AuthProvider>().hasPermission('attendance.edit');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -340,17 +342,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 label: Text(DateFormat('dd.MM.yyyy').format(day)),
               ),
               const Spacer(),
-              FilledButton.icon(
-                onPressed: students.isEmpty || saving ? null : _save,
-                icon: saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined),
-                label: const Text('Сохранить'),
-              ),
+              if (canEdit)
+                FilledButton.icon(
+                  onPressed: students.isEmpty || saving ? null : _save,
+                  icon: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: const Text('Сохранить'),
+                ),
             ],
           ),
         ),
@@ -367,16 +370,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 _countChip('Опоздали', counts[_late] ?? 0, const Color(0xFFF59E0B)),
                 _countChip('Отсутствуют', counts[_absent] ?? 0, const Color(0xFFEF4444)),
                 const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () => _setAll(_present),
-                  icon: const Icon(Icons.done_all, size: 18),
-                  label: const Text('Все присутствуют'),
-                ),
-                TextButton.icon(
-                  onPressed: () => _setAll(_absent),
-                  icon: const Icon(Icons.clear_all, size: 18),
-                  label: const Text('Все отсутствуют'),
-                ),
+                if (canEdit) ...[
+                  TextButton.icon(
+                    onPressed: () => _setAll(_present),
+                    icon: const Icon(Icons.done_all, size: 18),
+                    label: const Text('Все присутствуют'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _setAll(_absent),
+                    icon: const Icon(Icons.clear_all, size: 18),
+                    label: const Text('Все отсутствуют'),
+                  ),
+                ],
               ],
             ),
           ),
@@ -414,6 +419,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               fio: '${student['fio']}',
                               email: '${student['email']}',
                               mark: mark,
+                              canEdit: canEdit,
                               onChanged: (v) => setState(() => marks[sid] = v),
                             );
                           },
@@ -444,12 +450,14 @@ class _StudentRow extends StatelessWidget {
     required this.fio,
     required this.email,
     required this.mark,
+    required this.canEdit,
     required this.onChanged,
   });
 
   final String fio;
   final String email;
   final int mark;
+  final bool canEdit;
   final ValueChanged<int> onChanged;
 
   Color get _markColor => switch (mark) {
@@ -472,7 +480,7 @@ class _StudentRow extends StatelessWidget {
               .map((e) => ButtonSegment(value: int.parse(e.key), label: Text(e.value)))
               .toList(),
           selected: {mark},
-          onSelectionChanged: (value) => onChanged(value.first),
+          onSelectionChanged: canEdit ? (value) => onChanged(value.first) : null,
         ),
       ),
     );

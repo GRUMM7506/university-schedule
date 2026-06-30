@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.models import User
+from app.models import User, UserPermission
+from app.models.permissions import DEFAULT_ROLE_PERMISSIONS
 
 bearer = HTTPBearer()
 
@@ -47,3 +48,32 @@ def require_student(user: User = Depends(get_current_user)) -> User:
     if user.role != "Student":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Student role required")
     return user
+
+
+def has_effective_permission(user: User, permission: str, db: Session) -> bool:
+    if user.role == "Admin":
+        return True
+    override = db.scalar(
+        select(UserPermission).where(
+            UserPermission.user_id == user.id,
+            UserPermission.permission == permission,
+        )
+    )
+    if override is not None:
+        return override.is_granted
+    return permission in DEFAULT_ROLE_PERMISSIONS.get(user.role, set())
+
+
+def require_permission(permission: str):
+    def dependency(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        if not has_effective_permission(user, permission, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission required: {permission}",
+            )
+        return user
+
+    return dependency

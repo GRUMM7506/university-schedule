@@ -33,7 +33,6 @@ class AuthProvider extends ChangeNotifier {
   /// user (of any role allowed to reach the shell at all) can open them.
   static const _routesWithoutPermissionCheck = {
     '/', '/portal', '/profile', '/profile-setup', '/login',
-    '/my-grades', '/my-attendance',
   };
 
   /// Maps a shell route to the permission key that gates it, following the
@@ -48,6 +47,9 @@ class AuthProvider extends ChangeNotifier {
       '/attendance': 'attendance.view',
       '/performance': 'performance.view',
       '/users-admin': 'users.manage',
+      '/my-schedule': 'schedule.view',
+      '/my-grades': 'performance.view',
+      '/my-attendance': 'attendance.view',
     };
     if (explicit.containsKey(route)) return explicit[route];
     if (_routesWithoutPermissionCheck.contains(route)) return null;

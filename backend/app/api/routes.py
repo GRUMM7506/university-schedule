@@ -5,7 +5,7 @@ from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session
 
 from app.api.crud_router import build_crud_router
-from app.api.deps import get_current_user, require_admin, require_any, require_staff
+from app.api.deps import get_current_user, require_any, require_permission
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db.session import get_db
 from app.models import (
@@ -212,7 +212,7 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────
-@api_router.get("/dashboard", response_model=DashboardStats, dependencies=[Depends(require_staff)])
+@api_router.get("/dashboard", response_model=DashboardStats, dependencies=[Depends(require_permission("dashboard.view"))])
 def dashboard(db: Session = Depends(get_db)):
     return DashboardStats(
         students=db.scalar(select(func.count(Student.id))) or 0,
@@ -301,6 +301,7 @@ for prefix, model, create_schema, update_schema, read_schema, staff_read, any_re
             read_schema=read_schema,
             staff_read=staff_read,
             any_read=any_read,
+            permission_prefix=prefix,
         ),
         prefix=f"/{prefix}",
         tags=[prefix],
@@ -432,12 +433,12 @@ def update_profile(
     return {"ok": True}
 
 
-@api_router.get("/users", response_model=list[UserRead], dependencies=[Depends(require_admin)])
+@api_router.get("/users", response_model=list[UserRead], dependencies=[Depends(require_permission("users.manage"))])
 def list_users(db: Session = Depends(get_db)):
     return db.scalars(select(User).order_by(User.id)).all()
 
 
-@api_router.post("/users", response_model=UserRead, dependencies=[Depends(require_admin)])
+@api_router.post("/users", response_model=UserRead, dependencies=[Depends(require_permission("users.manage"))])
 def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     existing = db.scalar(select(User).where(User.username == payload.username))
     if existing:
@@ -449,7 +450,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     return user
 
 
-@api_router.put("/users/{user_id}", response_model=UserRead, dependencies=[Depends(require_admin)])
+@api_router.put("/users/{user_id}", response_model=UserRead, dependencies=[Depends(require_permission("users.manage"))])
 def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.id == user_id))
     if not user:
@@ -463,7 +464,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     return user
 
 
-@api_router.delete("/users/{user_id}", dependencies=[Depends(require_admin)])
+@api_router.delete("/users/{user_id}", dependencies=[Depends(require_permission("users.manage"))])
 def delete_user(user_id: int, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.id == user_id))
     if not user:
@@ -502,7 +503,7 @@ def schedule_view_stmt():
     )
 
 
-@api_router.get("/schedule/group/{group_id}", response_model=list[ScheduleView], dependencies=[Depends(require_any)])
+@api_router.get("/schedule/group/{group_id}", response_model=list[ScheduleView], dependencies=[Depends(require_permission("schedule.view"))])
 def group_schedule(group_id: int, week_id: int | None = None, db: Session = Depends(get_db)):
     stmt = schedule_view_stmt().where(Schedule.group_id == group_id)
     if week_id:
@@ -510,7 +511,7 @@ def group_schedule(group_id: int, week_id: int | None = None, db: Session = Depe
     return [ScheduleView(**row._asdict()) for row in db.execute(stmt).all()]
 
 
-@api_router.get("/schedule/teacher/{teacher_id}", response_model=list[ScheduleView], dependencies=[Depends(require_any)])
+@api_router.get("/schedule/teacher/{teacher_id}", response_model=list[ScheduleView], dependencies=[Depends(require_permission("schedule.view"))])
 def teacher_schedule(teacher_id: int, week_id: int | None = None, db: Session = Depends(get_db)):
     stmt = schedule_view_stmt().where(Schedule.teacher_id == teacher_id)
     if week_id:
@@ -603,7 +604,7 @@ def update_user_permission(userId: int, payload: dict, user: User = Depends(get_
 
 
 
-@api_router.get("/schedule/student/{student_id}", response_model=list[ScheduleView], dependencies=[Depends(require_any)])
+@api_router.get("/schedule/student/{student_id}", response_model=list[ScheduleView], dependencies=[Depends(require_permission("schedule.view"))])
 def student_schedule(student_id: int, week_id: int | None = None, db: Session = Depends(get_db)):
     student = db.scalar(select(Student).where(Student.id == student_id))
     if not student:
@@ -616,19 +617,19 @@ def student_schedule(student_id: int, week_id: int | None = None, db: Session = 
 
 # ─── Student Detail Endpoints ──────────────────────────────────────────────────
 
-@api_router.get("/students/{student_id}/attendance", response_model=list[AttendanceRead], dependencies=[Depends(require_any)])
+@api_router.get("/students/{student_id}/attendance", response_model=list[AttendanceRead], dependencies=[Depends(require_permission("attendance.view"))])
 def student_attendance(student_id: int, db: Session = Depends(get_db)):
     return db.scalars(select(Attendance).where(Attendance.student_id == student_id).order_by(Attendance.day_date.desc())).all()
 
 
-@api_router.get("/students/{student_id}/performance", response_model=list[PerformanceRead], dependencies=[Depends(require_any)])
+@api_router.get("/students/{student_id}/performance", response_model=list[PerformanceRead], dependencies=[Depends(require_permission("performance.view"))])
 def student_performance(student_id: int, db: Session = Depends(get_db)):
     return db.scalars(select(Performance).where(Performance.student_id == student_id).order_by(Performance.tour_num)).all()
 
 
 # ─── Attendance Bulk ───────────────────────────────────────────────────────────
 
-@api_router.post("/attendance/bulk", response_model=list[AttendanceRead], dependencies=[Depends(require_staff)])
+@api_router.post("/attendance/bulk", response_model=list[AttendanceRead], dependencies=[Depends(require_permission("attendance.edit"))])
 def save_attendance_bulk(items: list[AttendanceBulkItem], db: Session = Depends(get_db)):
     service = CRUDService(Attendance)
     saved = []
@@ -652,7 +653,7 @@ def save_attendance_bulk(items: list[AttendanceBulkItem], db: Session = Depends(
 
 # ─── Gradebook ────────────────────────────────────────────────────────────────
 
-@api_router.get("/gradebook", dependencies=[Depends(require_staff)])
+@api_router.get("/gradebook", dependencies=[Depends(require_permission("gradebook.view"))])
 def gradebook(group_id: int | None = None, discipline_id: int | None = None, db: Session = Depends(get_db)):
     """Returns gradebook: list of students with their performance marks."""
     query = (
@@ -683,7 +684,7 @@ def gradebook(group_id: int | None = None, discipline_id: int | None = None, db:
 
 # ─── Statistics ───────────────────────────────────────────────────────────────
 
-@api_router.get("/statistics/faculty/{faculty_id}", response_model=FacultyStatistics, dependencies=[Depends(require_staff)])
+@api_router.get("/statistics/faculty/{faculty_id}", response_model=FacultyStatistics, dependencies=[Depends(require_permission("dashboard.view"))])
 def faculty_statistics(faculty_id: int, db: Session = Depends(get_db)):
     groups_stmt = select(StudentGroup.id).join(Speciality).where(Speciality.faculty_id == faculty_id).subquery()
     students = db.scalar(select(func.count(Student.id)).where(Student.group_id.in_(select(groups_stmt.c.id)))) or 0
