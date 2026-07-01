@@ -116,6 +116,21 @@ class _GradebookScreenState extends State<GradebookScreen> {
     setState(() => loading = false);
   }
 
+  void _updateCascadingFilters() {
+    final specs = _filteredSpecialities;
+    if (!specs.any((s) => _readInt(s['id']) == specialityId)) {
+      specialityId = specs.isNotEmpty ? _readInt(specs.first['id']) : null;
+    }
+    final courses = _courseOptions;
+    if (!courses.any((c) => c['id'] == course)) {
+      course = courses.isNotEmpty ? _readInt(courses.first['id']) : null;
+    }
+    final grps = _filteredGroups;
+    if (!grps.any((g) => _readInt(g['id']) == groupId)) {
+      groupId = grps.isNotEmpty ? _readInt(grps.first['id']) : null;
+    }
+  }
+
   // Build a pivot: student -> {discipline -> {mark, subject_name}}
   Map<String, Map<String, dynamic>> _buildPivot() {
     final Map<String, Map<String, dynamic>> pivot = {};
@@ -206,18 +221,13 @@ class _GradebookScreenState extends State<GradebookScreen> {
                       'Факультет',
                       facultyId,
                       faculties,
-                      (v) => setState(() {
-                        facultyId = v;
-                        if (!_filteredSpecialities.any(
-                          (s) => _readInt(s['id']) == specialityId,
-                        )) {
-                          specialityId = null;
-                        }
-                        if (!_courseOptions.any((c) => c['id'] == course)) {
-                          course = null;
-                        }
-                        groupId = null;
-                      }),
+                      (v) {
+                        setState(() {
+                          facultyId = v;
+                          _updateCascadingFilters();
+                        });
+                        _loadData();
+                      },
                       allLabel: 'Все факультеты',
                       width: 240,
                     ),
@@ -225,32 +235,38 @@ class _GradebookScreenState extends State<GradebookScreen> {
                       'Направление',
                       specialityId,
                       _filteredSpecialities,
-                      (v) => setState(() {
-                        specialityId = v;
-                        if (!_courseOptions.any((c) => c['id'] == course)) {
-                          course = null;
-                        }
-                        groupId = null;
-                      }),
+                      (v) {
+                        setState(() {
+                          specialityId = v;
+                          _updateCascadingFilters();
+                        });
+                        _loadData();
+                      },
                       allLabel: 'Все направления',
                       width: 260,
                     ),
-                    // _buildDropdown(
-                    //   'Курс',
-                    //   course,
-                    //   _courseOptions,
-                    //   (v) => setState(() {
-                    //     course = v;
-                    //     groupId = null;
-                    //   }),
-                    //   allLabel: 'Все курсы',
-                    //   width: 160,
-                    // ),
+                    _buildDropdown(
+                      'Курс',
+                      course,
+                      _courseOptions,
+                      (v) {
+                        setState(() {
+                          course = v;
+                          _updateCascadingFilters();
+                        });
+                        _loadData();
+                      },
+                      allLabel: 'Все курсы',
+                      width: 160,
+                    ),
                     _buildDropdown(
                       'Группа',
                       groupId,
                       _filteredGroups,
-                      (v) => setState(() => groupId = v),
+                      (v) {
+                        setState(() => groupId = v);
+                        _loadData();
+                      },
                       allLabel: 'Все группы',
                       width: 220,
                     ),

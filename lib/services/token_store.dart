@@ -8,18 +8,27 @@ import 'package:shared_preferences/shared_preferences.dart';
 class TokenStore {
   static const _refreshTokenKey = 'refresh_token';
 
+  SharedPreferences? _prefs;
+
+  /// Returns the cached [SharedPreferences] instance, initialising it on
+  /// first access. Subsequent calls are synchronous.
+  Future<SharedPreferences> _getPrefs() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
+  }
+
   Future<void> saveRefreshToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.setString(_refreshTokenKey, token);
   }
 
   Future<String?> readRefreshToken() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     return prefs.getString(_refreshTokenKey);
   }
 
   Future<void> clear() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.remove(_refreshTokenKey);
   }
 }

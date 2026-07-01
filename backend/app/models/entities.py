@@ -44,6 +44,7 @@ class LessonType(IntEnum):
 class UserRole(StrEnum):
     admin = "Admin"
     teacher = "Teacher"
+    student = "Student"
     guest = "Guest"
 
 

@@ -5,20 +5,24 @@ class AuthService {
 
   final ApiClient client;
 
+  /// Parses a dynamic value to int, handling both int and string representations.
+  static int? _toInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    return int.tryParse(value.toString());
+  }
+
   Future<Map<String, dynamic>> login(String username, String password) async {
     final response = await client.dio.post(
       '/auth/login',
       data: {'username': username, 'password': password},
     );
     client.token = response.data['access_token'] as String;
-    final rawStudentId = response.data['student_id'];
-    final studentId = rawStudentId == null
-        ? null
-        : (rawStudentId is int ? rawStudentId : int.tryParse(rawStudentId.toString()));
     return {
       'role': response.data['role'] as String,
       'username': response.data['username'] as String? ?? username,
-      'student_id': studentId,
+      'student_id': _toInt(response.data['student_id']),
+      'refresh_token': response.data['refresh_token'] as String?,
     };
   }
 
@@ -28,14 +32,10 @@ class AuthService {
       data: {'refresh_token': refreshToken},
     );
     client.token = response.data['access_token'] as String;
-    final rawStudentId = response.data['student_id'];
-    if (rawStudentId != null) {
-      final studentId = rawStudentId is int
-          ? rawStudentId
-          : int.tryParse(rawStudentId.toString());
-      response.data['student_id'] = studentId;
-    }
-    return response.data as Map<String, dynamic>;
+    return {
+      ...Map<String, dynamic>.from(response.data as Map),
+      'student_id': _toInt(response.data['student_id']),
+    };
   }
 
   Future<Map<String, dynamic>> me() async {
@@ -46,18 +46,16 @@ class AuthService {
   Future<Map<String, dynamic>> guestLogin() async {
     final response = await client.dio.post('/auth/guest');
     client.token = response.data['access_token'] as String;
-    final rawStudentId = response.data['student_id'];
-    final studentId = rawStudentId == null
-        ? null
-        : (rawStudentId is int ? rawStudentId : int.tryParse(rawStudentId.toString()));
     return {
       'role': response.data['role'] as String,
       'username': response.data['username'] as String? ?? 'Гость',
-      'student_id': studentId,
+      'student_id': _toInt(response.data['student_id']),
+      'refresh_token': response.data['refresh_token'] as String?,
     };
   }
 
-  Future<Map<String, dynamic>> getPermissions(String username) async {
+  /// Fetches the effective permissions for the current authenticated user.
+  Future<Map<String, dynamic>> getPermissions() async {
     final response = await client.dio.get('/permissions/me');
     return response.data as Map<String, dynamic>;
   }

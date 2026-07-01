@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../services/academic_service.dart';
+import '../services/user_service.dart';
 import '../widgets/glass.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
@@ -195,7 +196,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       _error = null;
     });
     try {
-      await context.read<AcademicService>().setupProfile({
+      await context.read<UserService>().setupProfile({
         'fio': _fioController.text.trim(),
         if (auth.isStudent) ...{
           'faculty_id': _facultyId,
@@ -206,6 +207,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         },
         if (auth.isTeacher) 'position': _positionController.text.trim(),
       });
+      // The old clearListCache() call for AcademicService is no longer needed here.
       await auth.refreshMe();
       if (!mounted) return;
       context.go(auth.isStudent ? '/portal' : '/');

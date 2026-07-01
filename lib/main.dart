@@ -7,6 +7,8 @@ import 'routes/app_router.dart';
 import 'services/academic_service.dart';
 import 'services/api_client.dart';
 import 'services/auth_service.dart';
+import 'services/token_store.dart';
+import 'services/user_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 
@@ -39,6 +41,7 @@ class _UniversityAppState extends State<UniversityApp> {
   late final AuthProvider authProvider;
   late final ThemeController themeController;
   late final AcademicService academicService;
+  late final UserService userService;
   late final GoRouter router;
 
   @override
@@ -50,6 +53,7 @@ class _UniversityAppState extends State<UniversityApp> {
     // Created once for the whole app lifetime (not per-route) so its
     // reference-data cache actually survives navigation between screens.
     academicService = AcademicService(apiClient);
+    userService = UserService(apiClient);
     router = buildRouter(authProvider, apiClient, academicService);
 
     apiClient.onError = showGlobalErrorSnackBar;
@@ -66,6 +70,7 @@ class _UniversityAppState extends State<UniversityApp> {
       providers: [
         Provider.value(value: apiClient),
         Provider.value(value: academicService),
+        Provider.value(value: userService),
         ChangeNotifierProvider.value(value: authProvider),
         ChangeNotifierProvider.value(value: themeController),
       ],

@@ -22,6 +22,8 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
   List<Map<String, dynamic>> grades = [];
   List<Map<String, dynamic>> attendance = [];
   List<Map<String, dynamic>> weeks = [];
+  List<Map<String, dynamic>> disciplines = [];
+  Map<int, String> disciplineNames = {};
   int? weekId;
   bool loading = true;
 
@@ -51,7 +53,30 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
     }
     try {
       weeks = await service.list('/study-weeks');
-      weekId ??= weeks.isEmpty ? null : weeks.first['id'] as int;
+      disciplines = await service.list('/disciplines');
+      // Создаём маппинг ID -> имя дисциплины
+      for (final d in disciplines) {
+        final id = d['id'] as int?;
+        final name = d['name'] ?? d['displayName'] ?? '#${id}';
+        if (id != null) {
+          disciplineNames[id] = name.toString();
+        }
+      }
+      // Выбирать текущую неделю, а не первую
+      if (weeks.isNotEmpty) {
+        // Пытаемся найти текущую неделю (where week_id = current)
+        final today = DateTime.now();
+        int? currentWeekId;
+        for (final week in weeks) {
+          final startDate = DateTime.tryParse(week['start_date'].toString());
+          final endDate = DateTime.tryParse(week['end_date'].toString());
+          if (startDate != null && endDate != null && today.isAfter(startDate) && today.isBefore(endDate.add(const Duration(days: 1)))) {
+            currentWeekId = week['id'] as int;
+            break;
+          }
+        }
+        weekId = currentWeekId ?? (weeks.first['id'] as int);
+      }
       dashData = await service.studentDashboard(studentId);
       grades = await service.studentPerformance(studentId);
       attendance = await service.studentAttendance(studentId);
@@ -167,13 +192,14 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
                       items: scheduleItems,
                       weeks: weeks,
                       weekId: weekId,
+                      attendance: attendance,
                       onWeekChanged: (v) {
                         weekId = v;
                         _load();
                       },
                     ),
-                    _GradesTab(grades: grades),
-                    _AttendanceTab(attendance: attendance),
+                    _GradesTab(grades: grades, disciplineNames: disciplineNames),
+                    _AttendanceTab(attendance: attendance, disciplineNames: disciplineNames),
                   ],
                 ),
         ),
@@ -226,11 +252,13 @@ class _ScheduleTab extends StatefulWidget {
     required this.items,
     required this.weeks,
     required this.weekId,
+    required this.attendance,
     required this.onWeekChanged,
   });
 
   final List<Map<String, dynamic>> items;
   final List<Map<String, dynamic>> weeks;
+  final List<Map<String, dynamic>> attendance;
   final int? weekId;
   final ValueChanged<int?> onWeekChanged;
 
@@ -259,6 +287,34 @@ class _ScheduleTabState extends State<_ScheduleTab> {
     5: '15:30–17:00',
     6: '17:15–18:45',
   };
+
+  /// Получить статус посещаемости для конкретной пары (по дате и номеру пары)
+  /// Возвращает: (метка, иконка, цвет) или null если нет данных
+  ({String label, IconData icon, Color color})? _getAttendanceStatus(String date, int pairNum) {
+    for (final a in widget.attendance) {
+      if (a['day_date'].toString() == date && a['pair_num'] == pairNum) {
+        final mark = a['mark'] as int? ?? 2;
+        return switch (mark) {
+          2 => (
+            label: 'Присутствовал',
+            icon: Icons.check_circle,
+            color: const Color(0xFF10B981),
+          ),
+          1 => (
+            label: 'Опоздал',
+            icon: Icons.schedule,
+            color: const Color(0xFFF59E0B),
+          ),
+          _ => (
+            label: 'Отсутствовал',
+            icon: Icons.cancel,
+            color: const Color(0xFFEF4444),
+          ),
+        };
+      }
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1005,8 +1061,9 @@ class _ViewButton extends StatelessWidget {
 // ─── Grades Tab ───────────────────────────────────────────────────────────────
 
 class _GradesTab extends StatelessWidget {
-  const _GradesTab({required this.grades});
+  const _GradesTab({required this.grades, required this.disciplineNames});
   final List<Map<String, dynamic>> grades;
+  final Map<int, String> disciplineNames;
 
   @override
   Widget build(BuildContext context) {
@@ -1020,6 +1077,9 @@ class _GradesTab extends StatelessWidget {
       itemBuilder: (context, i) {
         final g = grades[i];
         final mark = g['mark'] as int? ?? 0;
+        // Использовать имя дисциплины из API, если доступно
+        final disciplineName = g['discipline_name'] as String? ?? 
+            (g['discipline_id'] != null ? 'Дисциплина #${g['discipline_id']}' : 'Неизвестная дисциплина');
         final color = _markColor(mark);
         return GlassPanel(
           padding: const EdgeInsets.all(16),
@@ -1050,8 +1110,10 @@ class _GradesTab extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Дисциплина #${g['discipline_id']}',
+                      disciplineName,
                       style: const TextStyle(fontWeight: FontWeight.w700),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       'Контроль: ${g['control_type'] == 1 ? 'Экзамен' : 'Зачет'} · Тур ${g['tour_num']}',
@@ -1110,8 +1172,9 @@ class _GradesTab extends StatelessWidget {
 // ─── Attendance Tab ───────────────────────────────────────────────────────────
 
 class _AttendanceTab extends StatelessWidget {
-  const _AttendanceTab({required this.attendance});
+  const _AttendanceTab({required this.attendance, required this.disciplineNames});
   final List<Map<String, dynamic>> attendance;
+  final Map<int, String> disciplineNames;
 
   @override
   Widget build(BuildContext context) {
@@ -1134,6 +1197,21 @@ class _AttendanceTab extends StatelessWidget {
           1 => ('Опоздал', Icons.schedule_outlined, const Color(0xFFF59E0B)),
           _ => ('Отсутствовал', Icons.cancel_outlined, const Color(0xFFEF4444)),
         };
+        
+        // Получить информацию о посещаемости - нам нужно попытаться получить информацию о дисциплине
+        // Сейчас у нас есть day_date, pair_num, но нет информации о дисциплине
+        // Это требует изменения API, но пока мы можем улучшить отображение даты и времени
+        final pairTimes = {
+          1: '08:00–09:30',
+          2: '09:45–11:15',
+          3: '11:30–13:00',
+          4: '13:45–15:15',
+          5: '15:30–17:00',
+          6: '17:15–18:45',
+        };
+        final pairNum = a['pair_num'] as int? ?? 1;
+        final time = pairTimes[pairNum] ?? '';
+        
         return GlassPanel(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
@@ -1152,7 +1230,7 @@ class _AttendanceTab extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      'Пара ${a['pair_num']}',
+                      '$pairNum пара ($time)',
                       style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(context).colorScheme.onSurfaceVariant,

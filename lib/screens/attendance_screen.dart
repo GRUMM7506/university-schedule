@@ -42,28 +42,41 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Future<void> _loadRefs() async {
-    final service = context.read<AcademicService>();
-    groups = await service.list('/groups');
-    faculties = await service.list('/faculties');
-    specialities = await service.list('/specialities');
-    if (groups.isNotEmpty) {
-      final firstGroup = groups.first;
-      groupId ??= firstGroup['id'] as int;
-      final sId = _readInt(firstGroup['speciality_id']);
-      specialityId = sId;
-      course = _readInt(firstGroup['course']);
-      if (sId != null) {
-        for (final speciality in specialities) {
-          if (_readInt(speciality['id']) == sId) {
-            facultyId = _readInt(speciality['faculty_id']);
-            break;
+    try {
+      setState(() => loading = true);
+      final service = context.read<AcademicService>();
+      groups = await service.list('/groups');
+      faculties = await service.list('/faculties');
+      specialities = await service.list('/specialities');
+      if (groups.isNotEmpty) {
+        final firstGroup = groups.first;
+        groupId ??= firstGroup['id'] as int;
+        final sId = _readInt(firstGroup['speciality_id']);
+        specialityId = sId;
+        course = _readInt(firstGroup['course']);
+        if (sId != null) {
+          for (final speciality in specialities) {
+            if (_readInt(speciality['id']) == sId) {
+              facultyId = _readInt(speciality['faculty_id']);
+              break;
+            }
           }
         }
+      } else if (faculties.isNotEmpty) {
+        facultyId = faculties.first['id'] as int;
       }
-    } else if (faculties.isNotEmpty) {
-      facultyId = faculties.first['id'] as int;
+      await _loadStudents();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка загрузки: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => loading = false);
+      }
     }
-    await _loadStudents();
   }
 
   List<Map<String, dynamic>> get _filteredSpecialities {
@@ -120,15 +133,27 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Future<void> _loadStudents() async {
     setState(() => loading = true);
-    final service = context.read<AcademicService>();
-    final allStudents = await service.list('/students');
-    students = allStudents.where((s) => s['group_id'] == groupId).toList()
-      ..sort((a, b) => '${a['fio']}'.compareTo('${b['fio']}'));
-    marks.clear();
-    for (final student in students) {
-      marks.putIfAbsent(student['id'] as int, () => _present);
+    try {
+      final service = context.read<AcademicService>();
+      final allStudents = await service.list('/students');
+      students = allStudents.where((s) => s['group_id'] == groupId).toList()
+        ..sort((a, b) => '${a['fio']}'.compareTo('${b['fio']}'));
+      marks.clear();
+      for (final student in students) {
+        marks.putIfAbsent(student['id'] as int, () => _present);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка загрузки студентов: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
-    if (mounted) setState(() => loading = false);
   }
 
   Future<void> _changeGroup(int? value) async {
@@ -138,6 +163,21 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       search = '';
     });
     await _loadStudents();
+  }
+
+  void _updateCascadingFilters() {
+    final specs = _filteredSpecialities;
+    if (!specs.any((s) => _readInt(s['id']) == specialityId)) {
+      specialityId = specs.isNotEmpty ? _readInt(specs.first['id']) : null;
+    }
+    final courses = _courseOptions;
+    if (!courses.any((c) => c['id'] == course)) {
+      course = courses.isNotEmpty ? _readInt(courses.first['id']) : null;
+    }
+    final grps = _filteredGroups;
+    if (!grps.any((g) => _readInt(g['id']) == groupId)) {
+      groupId = grps.isNotEmpty ? _readInt(grps.first['id']) : null;
+    }
   }
 
   Future<void> _save() async {
@@ -265,18 +305,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 'Факультет',
                 facultyId,
                 faculties,
-                (v) => setState(() {
-                  facultyId = v;
-                  if (!_filteredSpecialities.any(
-                    (s) => _readInt(s['id']) == specialityId,
-                  )) {
-                    specialityId = null;
-                  }
-                  if (!_courseOptions.any((c) => c['id'] == course)) {
-                    course = null;
-                  }
-                  groupId = null;
-                }),
+                (v) {
+                  setState(() {
+                    facultyId = v;
+                    _updateCascadingFilters();
+                  });
+                  _changeGroup(groupId);
+                },
                 // allLabel: 'Все факультеты',
                 width: 240,
               ),
@@ -284,27 +319,30 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 'Направление',
                 specialityId,
                 _filteredSpecialities,
-                (v) => setState(() {
-                  specialityId = v;
-                  if (!_courseOptions.any((c) => c['id'] == course)) {
-                    course = null;
-                  }
-                  groupId = null;
-                }),
+                (v) {
+                  setState(() {
+                    specialityId = v;
+                    _updateCascadingFilters();
+                  });
+                  _changeGroup(groupId);
+                },
                 // allLabel: 'Все направления',
                 width: 260,
               ),
-              // _buildDropdown(
-              //   'Курс',
-              //   course,
-              //   _courseOptions,
-              //   (v) => setState(() {
-              //     course = v;
-              //     groupId = null;
-              //   }),
-              //   // allLabel: 'Все курсы',
-              //   width: 160,
-              // ),
+              _buildDropdown(
+                'Курс',
+                course,
+                _courseOptions,
+                (v) {
+                  setState(() {
+                    course = v;
+                    _updateCascadingFilters();
+                  });
+                  _changeGroup(groupId);
+                },
+                // allLabel: 'Все курсы',
+                width: 160,
+              ),
               _buildDropdown(
                 'Группа',
                 groupId,

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/academic_service.dart';
+import '../services/user_service.dart';
 import '../widgets/glass.dart';
 
 class UserManagementScreen extends StatefulWidget {
@@ -26,7 +26,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   Future<void> _load() async {
     setState(() => loading = true);
     try {
-      users = await context.read<AcademicService>().listUsers();
+      users = await context.read<UserService>().listUsers();
     } catch (_) {}
     setState(() => loading = false);
   }
@@ -125,7 +125,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     );
     if (result != null && mounted) {
       try {
-        await context.read<AcademicService>().createUser(result);
+        await context.read<UserService>().createUser(result);
         _load();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -154,7 +154,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       builder: (_) => _UserDialog(user: user),
     );
     if (result != null && mounted) {
-      await context.read<AcademicService>().updateUser(
+      await context.read<UserService>().updateUser(
         user['id'] as int,
         result,
       );
@@ -185,7 +185,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       ),
     );
     if (confirmed == true && mounted) {
-      await context.read<AcademicService>().deleteUser(user['id'] as int);
+      await context.read<UserService>().deleteUser(user['id'] as int);
       _load();
     }
   }
@@ -321,7 +321,7 @@ class _PermissionsDialogState extends State<_PermissionsDialog> {
   }
 
   Future<void> _load() async {
-    final service = context.read<AcademicService>();
+    final service = context.read<UserService>();
     final data = await service.fetchUserPermissions(widget.userId);
     final perms = (data['permissions'] as List)
         .map((e) => Map<String, dynamic>.from(e as Map))
@@ -337,7 +337,7 @@ class _PermissionsDialogState extends State<_PermissionsDialog> {
     final permKey = perm['permission'] as String;
     if (_pending.contains(permKey)) return;
     setState(() => _pending.add(permKey));
-    final service = context.read<AcademicService>();
+    final service = context.read<UserService>();
     try {
       await service.updateUserPermission(widget.userId, {
         'permission': permKey,

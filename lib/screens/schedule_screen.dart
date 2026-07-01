@@ -142,6 +142,17 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     setState(() => loading = false);
   }
 
+  void _updateCascadingFilters() {
+    final specs = _filteredSpecialities;
+    if (!specs.any((s) => _readInt(s['id']) == specialityId)) {
+      specialityId = specs.isNotEmpty ? _readInt(specs.first['id']) : null;
+    }
+    final courses = _courseOptions;
+    if (!courses.any((c) => c['id'] == course)) {
+      course = courses.isNotEmpty ? _readInt(courses.first['id']) : null;
+    }
+  }
+
   List<Map<String, dynamic>> get _filteredSpecialities {
     if (facultyId == null) return specialities;
     return specialities
@@ -315,14 +326,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                   faculties,
                   (v) => setState(() {
                     facultyId = v;
-                    if (!_filteredSpecialities.any(
-                      (s) => _readInt(s['id']) == specialityId,
-                    )) {
-                      specialityId = null;
-                    }
-                    if (!_courseOptions.any((c) => c['id'] == course)) {
-                      course = null;
-                    }
+                    _updateCascadingFilters();
                     teacherId = null;
                   }),
                   allLabel: 'Все факультеты',
@@ -334,9 +338,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                   _filteredSpecialities,
                   (v) => setState(() {
                     specialityId = v;
-                    if (!_courseOptions.any((c) => c['id'] == course)) {
-                      course = null;
-                    }
+                    _updateCascadingFilters();
                     teacherId = null;
                   }),
                   allLabel: 'Все направления',
@@ -348,6 +350,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                   _courseOptions,
                   (v) => setState(() {
                     course = v;
+                    _updateCascadingFilters();
                     teacherId = null;
                   }),
                   allLabel: 'Все курсы',

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../services/academic_service.dart';
+import '../services/user_service.dart';
 import '../widgets/glass.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -442,7 +443,7 @@ class _ProfileEditViewState extends State<_ProfileEditView> {
         if (auth.isStudent && _birthDate != null)
           'birth_date': DateFormat('yyyy-MM-dd').format(_birthDate!),
       };
-      await context.read<AcademicService>().updateProfile(payload);
+      await context.read<UserService>().updateProfile(payload);
       widget.onSaved();
     } on DioException catch (e) {
       final detail = e.response?.data is Map

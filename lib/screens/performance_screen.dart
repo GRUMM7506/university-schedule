@@ -17,14 +17,10 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
   int? specialityId;
   int? course;
   int? groupId;
-  int? studentId;
   int? disciplineId;
   int? teacherId;
-  int mark = 5;
   int controlType = 1;
-  int tourNum = 1;
   bool loading = true;
-  bool saving = false;
 
   List<Map<String, dynamic>> faculties = [];
   List<Map<String, dynamic>> specialities = [];
@@ -32,6 +28,15 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
   List<Map<String, dynamic>> students = [];
   List<Map<String, dynamic>> disciplines = [];
   List<Map<String, dynamic>> teachers = [];
+
+  /// studentId -> {tourNum -> mark}
+  Map<int, Map<int, int?>> marks = {};
+
+  /// One date per tour column (tours 1..3 -> index 0..2).
+  final List<DateTime?> tourDates = List<DateTime?>.filled(3, null);
+
+  /// Keys of cells currently saving, e.g. "12_2" (studentId_tourNum).
+  final Set<String> savingCells = {};
 
   @override
   void initState() {
@@ -61,15 +66,14 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
 
     students = allStudents.where((s) => s['group_id'] == groupId).toList()
       ..sort((a, b) => '${a['fio']}'.compareTo('${b['fio']}'));
-    studentId = students.any((s) => s['id'] == studentId)
-        ? studentId
-        : (students.isEmpty ? null : students.first['id'] as int);
 
     if (!_groupDisciplines.any((d) => d['id'] == disciplineId)) {
       disciplineId = _groupDisciplines.isEmpty ? null : _groupDisciplines.first['id'] as int;
       _syncTeacherFromDiscipline();
     }
     teacherId ??= teachers.isEmpty ? null : teachers.first['id'] as int;
+
+    await _loadMarks();
     if (mounted) setState(() => loading = false);
   }
 
@@ -141,66 +145,98 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
     if (fromDiscipline != null) teacherId = fromDiscipline;
   }
 
+  /// Pulls all performance records and keeps only the ones matching the
+  /// current group's students + selected discipline/teacher/control type,
+  /// arranged as studentId -> tourNum -> mark for the table.
+  Future<void> _loadMarks() async {
+    if (disciplineId == null || teacherId == null || students.isEmpty) {
+      if (mounted) setState(() => marks = {});
+      return;
+    }
+    final service = context.read<AcademicService>();
+    final all = await service.list('/performance');
+    final studentIds = students.map((s) => _readInt(s['id'])).whereType<int>().toSet();
+
+    final result = <int, Map<int, int?>>{};
+    for (final p in all) {
+      final sid = _readInt(p['student_id']);
+      if (sid == null || !studentIds.contains(sid)) continue;
+      if (_readInt(p['discipline_id']) != disciplineId) continue;
+      if (_readInt(p['teacher_id']) != teacherId) continue;
+      if (_readInt(p['control_type']) != controlType) continue;
+      final tour = _readInt(p['tour_num']) ?? 1;
+      result.putIfAbsent(sid, () => {})[tour] = _readInt(p['mark']);
+    }
+    if (mounted) setState(() => marks = result);
+  }
+
   Future<void> _changeGroup(int? value) async {
     if (value == null) return;
     setState(() {
       groupId = value;
-      studentId = null;
     });
     final allStudents = await context.read<AcademicService>().list('/students');
     students = allStudents.where((s) => s['group_id'] == groupId).toList()
       ..sort((a, b) => '${a['fio']}'.compareTo('${b['fio']}'));
-    if (mounted) {
-      setState(() {
-        studentId = students.isEmpty ? null : students.first['id'] as int;
-        if (!_groupDisciplines.any((d) => d['id'] == disciplineId)) {
-          disciplineId = _groupDisciplines.isEmpty ? null : _groupDisciplines.first['id'] as int;
-          _syncTeacherFromDiscipline();
-        }
-      });
+    if (!_groupDisciplines.any((d) => d['id'] == disciplineId)) {
+      disciplineId = _groupDisciplines.isEmpty ? null : _groupDisciplines.first['id'] as int;
+      _syncTeacherFromDiscipline();
+    }
+    await _loadMarks();
+    if (mounted) setState(() {});
+  }
+
+  void _updateCascadingFilters() {
+    final specs = _filteredSpecialities;
+    if (!specs.any((s) => _readInt(s['id']) == specialityId)) {
+      specialityId = specs.isNotEmpty ? _readInt(specs.first['id']) : null;
+    }
+    final courses = _courseOptions;
+    if (!courses.any((c) => c['id'] == course)) {
+      course = courses.isNotEmpty ? _readInt(courses.first['id']) : null;
+    }
+    final grps = _filteredGroups;
+    if (!grps.any((g) => _readInt(g['id']) == groupId)) {
+      groupId = grps.isNotEmpty ? _readInt(grps.first['id']) : null;
     }
   }
 
   /// In a "credit" (зачёт) control, only three outcomes are used from the
   /// shared 0-5 mark scale: not attended, fail, pass.
   static const _creditMarks = [0, 2, 3];
+  static const _creditLabels = {0: 'Не был', 2: 'Не зачет', 3: 'Зачет'};
 
   void _changeControlType(int? value) {
-    setState(() {
-      controlType = value ?? 1;
-      if (controlType == 0 && !_creditMarks.contains(mark)) {
-        mark = 3; // default to "зачет"
-      }
-    });
+    setState(() => controlType = value ?? 1);
+    _loadMarks();
   }
 
-  Future<void> _save() async {
-    if (studentId == null || disciplineId == null || teacherId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Заполните студента, дисциплину и преподавателя'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-    setState(() => saving = true);
+  Future<void> _setMark(int? studentId, int tour, int value) async {
+    if (studentId == null || disciplineId == null || teacherId == null) return;
+    final key = '${studentId}_$tour';
+    setState(() => savingCells.add(key));
     try {
       await context.read<AcademicService>().savePerformance({
         'student_id': studentId,
         'discipline_id': disciplineId,
         'teacher_id': teacherId,
         'control_type': controlType,
-        'tour_num': tourNum,
-        'mark': mark,
+        'tour_num': tour,
+        'mark': value,
+        if (tourDates[tour - 1] != null) 'date': tourDates[tour - 1]!.toIso8601String(),
       });
+      marks.putIfAbsent(studentId, () => {})[tour] = value;
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Оценка сохранена')),
+          const SnackBar(
+            content: Text('Не удалось сохранить оценку'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
-      if (mounted) setState(() => saving = false);
+      if (mounted) setState(() => savingCells.remove(key));
     }
   }
 
@@ -232,17 +268,9 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                     (v) {
                       setState(() {
                         facultyId = v;
-                        if (!_filteredSpecialities.any((s) => _readInt(s['id']) == specialityId)) {
-                          specialityId = null;
-                        }
-                        if (!_courseOptions.any((c) => c['id'] == course)) {
-                          course = null;
-                        }
+                        _updateCascadingFilters();
                       });
-                      if (!_filteredGroups.any((g) => _readInt(g['id']) == groupId)) {
-                        final next = _filteredGroups.isEmpty ? null : _readInt(_filteredGroups.first['id']);
-                        if (next != null) _changeGroup(next);
-                      }
+                      if (groupId != null) _changeGroup(groupId);
                     },
                     allLabel: 'Все факультеты',
                   ),
@@ -253,16 +281,13 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                     'Направление',
                     specialityId,
                     _filteredSpecialities,
-                    (v) => setState(() {
-                      specialityId = v;
-                      if (!_courseOptions.any((c) => c['id'] == course)) {
-                        course = null;
-                      }
-                      if (!_filteredGroups.any((g) => _readInt(g['id']) == groupId)) {
-                        final next = _filteredGroups.isEmpty ? null : _readInt(_filteredGroups.first['id']);
-                        if (next != null) _changeGroup(next);
-                      }
-                    }),
+                    (v) {
+                      setState(() {
+                        specialityId = v;
+                        _updateCascadingFilters();
+                      });
+                      if (groupId != null) _changeGroup(groupId);
+                    },
                     allLabel: 'Все направления',
                   ),
                 ),
@@ -272,13 +297,13 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                     'Курс',
                     course,
                     _courseOptions,
-                    (v) => setState(() {
-                      course = v;
-                      if (!_filteredGroups.any((g) => _readInt(g['id']) == groupId)) {
-                        final next = _filteredGroups.isEmpty ? null : _readInt(_filteredGroups.first['id']);
-                        if (next != null) _changeGroup(next);
-                      }
-                    }),
+                    (v) {
+                      setState(() {
+                        course = v;
+                        _updateCascadingFilters();
+                      });
+                      if (groupId != null) _changeGroup(groupId);
+                    },
                     allLabel: 'Все курсы',
                   ),
                 ),
@@ -295,15 +320,6 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                             ))
                         .toList(),
                     onChanged: canEdit ? _changeGroup : null,
-                  ),
-                ),
-                SizedBox(
-                  width: 260,
-                  child: _SearchableStudentField(
-                    students: students,
-                    value: studentId,
-                    enabled: canEdit,
-                    onChanged: (v) => setState(() => studentId = v),
                   ),
                 ),
               ],
@@ -325,10 +341,13 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                     _groupDisciplines,
                     'displayName',
                     canEdit
-                        ? (v) => setState(() {
+                        ? (v) {
+                            setState(() {
                               disciplineId = v;
                               _syncTeacherFromDiscipline();
-                            })
+                            });
+                            _loadMarks();
+                          }
                         : null,
                   ),
                 ),
@@ -340,7 +359,12 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
                     teacherId,
                     teachers,
                     'fio',
-                    canEdit ? (v) => setState(() => teacherId = v) : null,
+                    canEdit
+                        ? (v) {
+                            setState(() => teacherId = v);
+                            _loadMarks();
+                          }
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -363,74 +387,80 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
         ),
         const SizedBox(height: 16),
         _SectionCard(
-          title: 'Оценка',
-          icon: Icons.grade_outlined,
+          title: 'Ведомость',
+          icon: Icons.table_chart_outlined,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const Text('Тур:', style: TextStyle(fontWeight: FontWeight.w500)),
-                const SizedBox(width: 12),
-                SegmentedButton<int>(
-                  segments: [1, 2, 3]
-                      .map((e) => ButtonSegment(value: e, label: Text('$e')))
-                      .toList(),
-                  selected: {tourNum},
-                  onSelectionChanged: canEdit ? (value) => setState(() => tourNum = value.first) : null,
-                ),
-              ],
+            _buildMarksTable(canEdit),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMarksTable(bool canEdit) {
+    if (disciplineId == null || teacherId == null) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: Text('Выберите дисциплину и преподавателя')),
+      );
+    }
+    if (students.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: Text('В группе нет студентов')),
+      );
+    }
+    return Column(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Expanded(
+              flex: 3,
+              child: Text('Студент', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
             ),
-            const SizedBox(height: 16),
-            if (controlType == 0)
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _creditMarks.map((value) {
-                  final label = switch (value) {
-                    0 => 'Не был',
-                    2 => 'Не зачет',
-                    _ => 'Зачет',
-                  };
-                  final selected = mark == value;
-                  return ChoiceChip(
-                    label: Text(label),
-                    selected: selected,
-                    onSelected: canEdit ? (_) => setState(() => mark = value) : null,
-                  );
-                }).toList(),
-              )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: performanceMarks.entries.map((e) {
-                  final value = int.parse(e.key);
-                  final selected = mark == value;
-                  return ChoiceChip(
-                    label: Text(e.value),
-                    selected: selected,
-                    onSelected: canEdit ? (_) => setState(() => mark = value) : null,
-                  );
-                }).toList(),
+            for (var t = 1; t <= 3; t++)
+              Expanded(
+                flex: 2,
+                child: _TourHeader(
+                  tourNum: t,
+                  date: tourDates[t - 1],
+                  enabled: canEdit,
+                  onPickDate: (d) => setState(() => tourDates[t - 1] = d),
+                ),
               ),
           ],
         ),
-        const SizedBox(height: 24),
-        if (canEdit)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: saving ? null : _save,
-              icon: saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.save_outlined),
-              label: const Text('Сохранить'),
+        const Divider(height: 20),
+        for (final student in students) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Text('${student['fio']}', overflow: TextOverflow.ellipsis),
+                ),
+                for (var t = 1; t <= 3; t++)
+                  Expanded(
+                    flex: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: _MarkCell(
+                        mark: marks[_readInt(student['id'])]?[t],
+                        controlType: controlType,
+                        enabled: canEdit,
+                        saving: savingCells.contains('${_readInt(student['id'])}_$t'),
+                        onSelect: (value) => _setMark(_readInt(student['id']), t, value),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
+          const Divider(height: 1),
+        ],
       ],
     );
   }
@@ -528,133 +558,222 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-/// Dropdown with a search field at the top of its menu, so picking a student
-/// out of a long list doesn't require scanning the whole roster.
-class _SearchableStudentField extends StatelessWidget {
-  const _SearchableStudentField({
-    required this.students,
-    required this.value,
+/// Column header for a tour: the tour number plus a tappable date, so the
+/// whole column's records can be tied to a specific exam/credit day.
+class _TourHeader extends StatelessWidget {
+  const _TourHeader({
+    required this.tourNum,
+    required this.date,
     required this.enabled,
-    required this.onChanged,
+    required this.onPickDate,
   });
 
-  final List<Map<String, dynamic>> students;
-  final int? value;
+  final int tourNum;
+  final DateTime? date;
   final bool enabled;
-  final ValueChanged<int?> onChanged;
+  final ValueChanged<DateTime?> onPickDate;
 
   @override
   Widget build(BuildContext context) {
-    final selected = students.firstWhere(
-      (s) => s['id'] == value,
-      orElse: () => const {},
+    final label = date == null
+        ? 'Дата'
+        : '${date!.day.toString().padLeft(2, '0')}.${date!.month.toString().padLeft(2, '0')}.${date!.year}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text('Тур $tourNum', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+        const SizedBox(height: 4),
+        InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: enabled ? () => _pick(context) : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.calendar_today_outlined, size: 13, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
-    final label = selected.isEmpty ? null : '${selected['fio']}';
+  }
 
+  Future<void> _pick(BuildContext context) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: date ?? now,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 1),
+    );
+    if (picked != null) onPickDate(picked);
+  }
+}
+
+/// Short Russian abbreviations shown in the grid instead of raw digits.
+const Map<int, String> _examShortLabels = {5: 'отл', 4: 'хор', 3: 'удовл', 2: 'неуд'};
+
+/// Full label for a given mark value, used in dialogs and confirmations.
+String _markLabel(int controlType, int value) {
+  if (controlType == 0) return _PerformanceScreenState._creditLabels[value] ?? '$value';
+  return performanceMarks['$value'] ?? '$value';
+}
+
+/// A single mark cell in the grid. Shows a short abbreviation (or a dash) and,
+/// once a mark is set, is locked — marks can only be entered once, never
+/// edited afterwards, so tapping does nothing after that point.
+class _MarkCell extends StatelessWidget {
+  const _MarkCell({
+    required this.mark,
+    required this.controlType,
+    required this.enabled,
+    required this.saving,
+    required this.onSelect,
+  });
+
+  final int? mark;
+  final int controlType;
+  final bool enabled;
+  final bool saving;
+  final ValueChanged<int> onSelect;
+
+  bool get _locked => mark != null;
+
+  String get _label {
+    if (mark == null) return '—';
+    if (controlType == 0) return _PerformanceScreenState._creditLabels[mark] ?? '$mark';
+    return _examShortLabels[mark] ?? '$mark';
+  }
+
+  Color? _bgColor(BuildContext context) {
+    if (mark == null) return null;
+    final scheme = Theme.of(context).colorScheme;
+    if (controlType == 0) {
+      if (mark == 2) return Colors.red.withValues(alpha: .12);
+      if (mark == 3) return Colors.green.withValues(alpha: .12);
+      return scheme.surfaceContainerHighest.withValues(alpha: .3);
+    }
+    if (mark! <= 2) return Colors.red.withValues(alpha: .12);
+    if (mark == 3) return Colors.orange.withValues(alpha: .12);
+    return Colors.green.withValues(alpha: .12);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: !enabled || students.isEmpty ? null : () => _openPicker(context),
-      child: InputDecorator(
-        decoration: const InputDecoration(
-          labelText: 'Студент',
-          isDense: true,
-          suffixIcon: Icon(Icons.search, size: 20),
+      onTap: enabled && !_locked ? () => _openDialog(context) : null,
+      child: Container(
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _bgColor(context) ?? Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: .18),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: .4)),
         ),
-        child: Text(
-          label ?? 'Нет студентов',
-          overflow: TextOverflow.ellipsis,
-        ),
+        child: saving
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(_label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  if (_locked) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.lock_outline, size: 11, color: Theme.of(context).colorScheme.outline),
+                  ],
+                ],
+              ),
       ),
     );
   }
 
-  Future<void> _openPicker(BuildContext context) async {
-    final result = await showModalBottomSheet<int>(
+  Future<void> _openDialog(BuildContext context) async {
+    final selected = await showDialog<int>(
       context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _StudentPickerSheet(students: students, currentValue: value),
+      builder: (ctx) => _MarkSelectDialog(controlType: controlType),
     );
-    if (result != null) onChanged(result);
+    if (selected == null || !context.mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Подтвердите оценку'),
+        content: Text(
+          'Поставить оценку «${_markLabel(controlType, selected)}»?\n\n'
+          'После сохранения изменить её будет нельзя — проверьте значение перед подтверждением.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Подтвердить')),
+        ],
+      ),
+    );
+    if (confirmed == true) onSelect(selected);
   }
 }
 
-class _StudentPickerSheet extends StatefulWidget {
-  const _StudentPickerSheet({required this.students, required this.currentValue});
+/// Dialog listing the valid mark options for the current control type
+/// (зачёт vs экзамен). Exam marks are shown with their short abbreviation.
+class _MarkSelectDialog extends StatelessWidget {
+  const _MarkSelectDialog({required this.controlType});
 
-  final List<Map<String, dynamic>> students;
-  final int? currentValue;
-
-  @override
-  State<_StudentPickerSheet> createState() => _StudentPickerSheetState();
-}
-
-class _StudentPickerSheetState extends State<_StudentPickerSheet> {
-  String query = '';
+  final int controlType;
 
   @override
   Widget build(BuildContext context) {
-    final filtered = query.isEmpty
-        ? widget.students
-        : widget.students
-            .where((s) => '${s['fio']}'.toLowerCase().contains(query.toLowerCase()))
-            .toList();
+    final values = controlType == 0
+        ? _PerformanceScreenState._creditMarks
+        : (performanceMarks.keys.map(int.parse).toList()..sort());
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.4,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (context, scrollController) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Поиск по имени...',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (v) => setState(() => query = v),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: filtered.isEmpty
-                    ? const Center(child: Text('Никого не найдено'))
-                    : ListView.builder(
-                        controller: scrollController,
-                        itemCount: filtered.length,
-                        itemBuilder: (context, i) {
-                          final s = filtered[i];
-                          final selected = s['id'] == widget.currentValue;
-                          return ListTile(
-                            title: Text('${s['fio']}'),
-                            subtitle: Text('${s['email']}'),
-                            trailing: selected ? const Icon(Icons.check_circle) : null,
-                            selected: selected,
-                            onTap: () => Navigator.pop(context, s['id'] as int),
-                          );
-                        },
+    return AlertDialog(
+      title: const Text('Выберите оценку'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: values.map((value) {
+            final short = controlType == 1 ? _examShortLabels[value] : null;
+            return ListTile(
+              leading: short == null
+                  ? null
+                  : Container(
+                      width: 52,
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(6),
                       ),
-              ),
-            ],
-          ),
-        );
-      },
+                      child: Text(
+                        short,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+              title: Text(_markLabel(controlType, value)),
+              onTap: () => Navigator.pop(context, value),
+            );
+          }).toList(),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+      ],
     );
   }
 }

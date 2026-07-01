@@ -85,7 +85,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _loadPermissions() async {
     try {
-      final result = await service.getPermissions(username ?? '');
+      final result = await service.getPermissions();
       final list = (result['permissions'] as List?) ?? const [];
       permissions = list.map((e) => e.toString()).toSet();
     } catch (_) {
@@ -102,6 +102,10 @@ class AuthProvider extends ChangeNotifier {
       role = result['role'] as String?;
       username = result['username'] as String? ?? uname;
       studentId = _toInt(result['student_id']);
+
+      // Persist refresh token so tryAutoLogin works on next app start
+      final rt = result['refresh_token'] as String?;
+      if (rt != null) await _tokenStore.saveRefreshToken(rt);
 
       try {
         await refreshMe(notify: false);
@@ -126,6 +130,10 @@ class AuthProvider extends ChangeNotifier {
       role = result['role'] as String?;
       username = result['username'] as String?;
       studentId = _toInt(result['student_id']);
+
+      final rt = result['refresh_token'] as String?;
+      if (rt != null) await _tokenStore.saveRefreshToken(rt);
+
       await _loadPermissions();
     } on DioException {
       error = 'Не удалось войти как гость';
@@ -183,8 +191,13 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Called by [ApiClient] on a 401 response.
+  /// Differs from [logout] in that it may show a "session expired" message
+  /// and skips the async token-store clear (already wiped by logout).
   void forceLogout() {
     logout();
+    // The global snackbar key will already show the network error from ApiClient,
+    // so no additional UI action is needed here.
   }
 
   Future<void> changePassword({

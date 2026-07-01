@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,8 +13,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final username = TextEditingController(text: 'admin');
-  final password = TextEditingController(text: 'admin123');
+  // Prefill demo credentials only in debug builds to avoid leaking them in prod
+  final username = TextEditingController(text: kDebugMode ? 'admin' : '');
+  final password = TextEditingController(text: kDebugMode ? 'admin123' : '');
 
   @override
   void dispose() {
