@@ -7,6 +7,7 @@ import '../models/entities.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entity_provider.dart';
 import '../screens/attendance_screen.dart';
+import '../screens/classroom_occupancy_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/entity_list_screen.dart';
 import '../screens/gradebook_screen.dart';
@@ -111,6 +112,12 @@ GoRouter buildRouter(
           GoRoute(
             path: '/schedule',
             builder: (context, state) => const ScheduleScreen(),
+          ),
+
+          // Classroom occupancy / free-room finder
+          GoRoute(
+            path: '/classrooms-map',
+            builder: (context, state) => const ClassroomOccupancyScreen(),
           ),
 
           // Attendance

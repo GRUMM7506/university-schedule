@@ -550,7 +550,7 @@ class _DayColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isToday = _isCurrentDayOfWeek(dayName);
-    final maxPair = items.fold<int>(0, (max, item) {
+    items.fold<int>(0, (max, item) {
       final pairNum = item['pair_num'] as int? ?? 0;
       return pairNum > max ? pairNum : max;
     });
@@ -623,78 +623,12 @@ class _DayColumn extends StatelessWidget {
 }()]);
   }
 
-  List<Widget> _buildPairSlots(int pair) {
-    final pairItems = items.where((e) => e['pair_num'] == pair).toList();
-    if (pairItems.isEmpty) {
-      return [_EmptyPairSlot(pairNum: pair, pairTimes: pairTimes)];
-    }
-
-    return pairItems
-        .map(
-          (item) => _LessonCard(
-            item: item,
-            pairTimes: pairTimes,
-            onEdit: onEdit != null ? () => onEdit!(item) : null,
-            onDelete: onDelete != null
-                ? () => onDelete!(item['id'] as int)
-                : null,
-          ),
-        )
-        .toList();
-  }
 
   bool _isCurrentDayOfWeek(String short) {
     final now = DateTime.now();
     final dayOfWeek = now.weekday; // 1=Mon..6=Sat
     const map = {'Пн': 1, 'Вт': 2, 'Ср': 3, 'Чт': 4, 'Пт': 5, 'Сб': 6};
     return map[short] == dayOfWeek;
-  }
-}
-
-class _EmptyPairSlot extends StatelessWidget {
-  const _EmptyPairSlot({required this.pairNum, required this.pairTimes});
-
-  final int pairNum;
-  final Map<int, String> pairTimes;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withValues(alpha: .16),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: .45),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$pairNum пара',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '${pairTimes[pairNum] ?? ''} · пусто',
-              style: TextStyle(
-                fontSize: 10,
-                color: scheme.onSurfaceVariant.withValues(alpha: .65),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

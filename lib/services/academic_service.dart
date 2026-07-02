@@ -162,6 +162,48 @@ class AcademicService {
     await client.dio.delete('/schedule/$id');
   }
 
+  /// For every classroom: what's booked into each pair of the given
+  /// week/day. Powers the "which room is free" screen.
+  Future<List<Map<String, dynamic>>> classroomsOccupancy({
+    required int weekId,
+    required int dayNum,
+  }) async {
+    final response = await client.dio.get(
+      '/classrooms/occupancy',
+      queryParameters: {'week_id': weekId, 'day_num': dayNum},
+    );
+    return (response.data as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  /// Everything already booked into an exact week/day/pair, plus whether
+  /// the given teacher/classroom/group specifically clash with one of
+  /// those bookings. Used to warn *before* saving a schedule entry.
+  Future<Map<String, dynamic>> checkScheduleSlot({
+    required int weekId,
+    required int dayNum,
+    required int pairNum,
+    int? teacherId,
+    int? classroomId,
+    int? groupId,
+    int? excludeId,
+  }) async {
+    final response = await client.dio.get(
+      '/schedule/check-slot',
+      queryParameters: {
+        'week_id': weekId,
+        'day_num': dayNum,
+        'pair_num': pairNum,
+        if (teacherId != null) 'teacher_id': teacherId,
+        if (classroomId != null) 'classroom_id': classroomId,
+        if (groupId != null) 'group_id': groupId,
+        if (excludeId != null) 'exclude_id': excludeId,
+      },
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
   /// Fetch a single entity record (e.g. /students/5 or /teachers/3)
   Future<Map<String, dynamic>> getEntity(String endpoint, int id) async {
     final response = await client.dio.get('$endpoint/$id');

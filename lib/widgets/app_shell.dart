@@ -63,6 +63,9 @@ class _AppShellState extends State<AppShell> {
     if (auth.hasPermission('schedule.view')) {
       entries.add((title: 'Расписание', route: '/schedule', icon: Icons.calendar_month_outlined));
     }
+    if (auth.hasPermission('classrooms.view')) {
+      entries.add((title: 'Занятость аудиторий', route: '/classrooms-map', icon: Icons.meeting_room_outlined));
+    }
     if (auth.hasPermission('attendance.view')) {
       entries.add((title: 'Посещаемость', route: '/attendance', icon: Icons.how_to_reg_outlined));
     }

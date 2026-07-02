@@ -201,11 +201,6 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
     }
   }
 
-  /// In a "credit" (зачёт) control, only three outcomes are used from the
-  /// shared 0-5 mark scale: not attended, fail, pass.
-  static const _creditMarks = [0, 2, 3];
-  static const _creditLabels = {0: 'Не был', 2: 'Не зачет', 3: 'Зачет'};
-
   void _changeControlType(int? value) {
     setState(() => controlType = value ?? 1);
     _loadMarks();
@@ -617,13 +612,32 @@ class _TourHeader extends StatelessWidget {
   }
 }
 
-/// Short Russian abbreviations shown in the grid instead of raw digits.
-const Map<int, String> _examShortLabels = {5: 'отл', 4: 'хор', 3: 'удовл', 2: 'неуд'};
+/// Visual identity (icon + color) for a mark, control-type aware. Shared by
+/// the cell badge and the selection sheet so both agree on what each mark
+/// looks like.
+class _MarkVisual {
+  const _MarkVisual(this.icon, this.color);
+  final IconData icon;
+  final Color color;
+}
 
-/// Full label for a given mark value, used in dialogs and confirmations.
-String _markLabel(int controlType, int value) {
-  if (controlType == 0) return _PerformanceScreenState._creditLabels[value] ?? '$value';
-  return performanceMarks['$value'] ?? '$value';
+_MarkVisual _markVisual(int controlType, int value) {
+  // 0 and 1 mean the same thing regardless of control type: недопуск / неявка.
+  if (value == 0) return const _MarkVisual(Icons.block_outlined, Color(0xFF374151));
+  if (value == 1) return const _MarkVisual(Icons.event_busy_outlined, Color(0xFF6B7280));
+  if (controlType == 0) {
+    // Зачёт: 2 = не зачёт, 3 = зачёт.
+    return value == 3
+        ? const _MarkVisual(Icons.check_circle_outline, Color(0xFF10B981))
+        : const _MarkVisual(Icons.cancel_outlined, Color(0xFFEF4444));
+  }
+  // Экзамен: 2..5.
+  return switch (value) {
+    5 => const _MarkVisual(Icons.star_outline, Color(0xFF10B981)),
+    4 => const _MarkVisual(Icons.thumb_up_outlined, Color(0xFF3B82F6)),
+    3 => const _MarkVisual(Icons.remove_circle_outline, Color(0xFFF59E0B)),
+    _ => const _MarkVisual(Icons.cancel_outlined, Color(0xFFEF4444)),
+  };
 }
 
 /// A single mark cell in the grid. Shows a short abbreviation (or a dash) and,
@@ -646,37 +660,24 @@ class _MarkCell extends StatelessWidget {
 
   bool get _locked => mark != null;
 
-  String get _label {
-    if (mark == null) return '—';
-    if (controlType == 0) return _PerformanceScreenState._creditLabels[mark] ?? '$mark';
-    return _examShortLabels[mark] ?? '$mark';
-  }
-
-  Color? _bgColor(BuildContext context) {
-    if (mark == null) return null;
-    final scheme = Theme.of(context).colorScheme;
-    if (controlType == 0) {
-      if (mark == 2) return Colors.red.withValues(alpha: .12);
-      if (mark == 3) return Colors.green.withValues(alpha: .12);
-      return scheme.surfaceContainerHighest.withValues(alpha: .3);
-    }
-    if (mark! <= 2) return Colors.red.withValues(alpha: .12);
-    if (mark == 3) return Colors.orange.withValues(alpha: .12);
-    return Colors.green.withValues(alpha: .12);
-  }
-
   @override
   Widget build(BuildContext context) {
+    final visual = mark == null ? null : _markVisual(controlType, mark!);
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(10),
       onTap: enabled && !_locked ? () => _openDialog(context) : null,
-      child: Container(
-        height: 40,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 42,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: _bgColor(context) ?? Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: .18),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: .4)),
+          color: visual?.color.withValues(alpha: .12) ??
+              Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: .18),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: visual?.color.withValues(alpha: .35) ??
+                Theme.of(context).colorScheme.outlineVariant.withValues(alpha: .4),
+          ),
         ),
         child: saving
             ? const SizedBox(
@@ -684,17 +685,24 @@ class _MarkCell extends StatelessWidget {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(_label, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  if (_locked) ...[
-                    const SizedBox(width: 4),
-                    Icon(Icons.lock_outline, size: 11, color: Theme.of(context).colorScheme.outline),
-                  ],
-                ],
-              ),
+            : mark == null
+                ? Icon(
+                    enabled ? Icons.add_circle_outline : Icons.remove,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.outline,
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(visual!.icon, size: 14, color: visual.color),
+                      const SizedBox(width: 5),
+                      Text(
+                        markShortLabel(controlType, mark!),
+                        style: TextStyle(fontWeight: FontWeight.w700, color: visual.color, fontSize: 12),
+                      ),
+                    ],
+                  ),
       ),
     );
   }
@@ -711,7 +719,7 @@ class _MarkCell extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Подтвердите оценку'),
         content: Text(
-          'Поставить оценку «${_markLabel(controlType, selected)}»?\n\n'
+          'Поставить оценку «${markLabel(controlType, selected)}»?\n\n'
           'После сохранения изменить её будет нельзя — проверьте значение перед подтверждением.',
         ),
         actions: [
@@ -724,8 +732,8 @@ class _MarkCell extends StatelessWidget {
   }
 }
 
-/// Dialog listing the valid mark options for the current control type
-/// (зачёт vs экзамен). Exam marks are shown with their short abbreviation.
+/// Sheet listing the valid mark options for the current control type
+/// (зачёт vs экзамен), shown as tappable colored cards.
 class _MarkSelectDialog extends StatelessWidget {
   const _MarkSelectDialog({required this.controlType});
 
@@ -733,9 +741,7 @@ class _MarkSelectDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final values = controlType == 0
-        ? _PerformanceScreenState._creditMarks
-        : (performanceMarks.keys.map(int.parse).toList()..sort());
+    final values = markValuesFor(controlType);
 
     return AlertDialog(
       title: const Text('Выберите оценку'),
@@ -744,29 +750,34 @@ class _MarkSelectDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: values.map((value) {
-            final short = controlType == 1 ? _examShortLabels[value] : null;
-            return ListTile(
-              leading: short == null
-                  ? null
-                  : Container(
-                      width: 52,
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        short,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+            final visual = _markVisual(controlType, value);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => Navigator.pop(context, value),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: visual.color.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: visual.color.withValues(alpha: .3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(visual.icon, size: 20, color: visual.color),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          markLabel(controlType, value),
+                          style: TextStyle(fontWeight: FontWeight.w700, color: visual.color),
                         ),
                       ),
-                    ),
-              title: Text(_markLabel(controlType, value)),
-              onTap: () => Navigator.pop(context, value),
+                      Icon(Icons.chevron_right, size: 18, color: visual.color.withValues(alpha: .6)),
+                    ],
+                  ),
+                ),
+              ),
             );
           }).toList(),
         ),

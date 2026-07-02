@@ -24,6 +24,12 @@ def _integrity_error_detail(exc: IntegrityError) -> str:
         return "Аудитория уже занята в выбранный день и пару."
     if "schedule" in message:
         return "Данное время уже занято в расписании."
+    if "ck_discipline_load_semester" in message:
+        return "Семестр должен быть в диапазоне от 1 до 12."
+    if "ck_attendance_mark_binary" in message:
+        return "Отметка посещаемости может быть только «отсутствовал» или «опоздал»."
+    if "ck_performance_mark_range" in message:
+        return "Недопустимая оценка для выбранного типа контроля (зачёт/экзамен)."
     return "Конфликт данных. Запись уже существует или нарушено ограничение."
 
 

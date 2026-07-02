@@ -14,10 +14,12 @@ const lessonTypes = {
   '2': 'Лабораторная',
   '3': 'Другое',
 };
+/// Attendance only stores *exceptions* — a student with no record for a
+/// lesson is presumed present. These are the two values a stored row can
+/// take; there is no "present" entry because presence is never written.
 const attendanceMarks = {
   '0': 'Отсутствовал',
   '1': 'Опоздал',
-  '2': 'Присутствовал',
 };
 const performanceMarks = {
   '0': 'Недопуск',
@@ -27,6 +29,69 @@ const performanceMarks = {
   '4': 'Хорошо',
   '5': 'Отлично',
 };
+
+/// Зачёт (control_type == 0) only ever uses four of the shared 0-5 marks:
+/// недопуск, неявка, не зачёт, зачёт. Экзамен uses the full scale via
+/// [performanceMarks] above.
+const creditMarkValues = [0, 1, 2, 3];
+const creditMarkLabels = {
+  0: 'Недопуск',
+  1: 'Неявка',
+  2: 'Не зачет',
+  3: 'Зачет',
+};
+
+/// Compact abbreviations shown inside grid/journal cells, where a full
+/// word like "Недопуск" would not fit. Keyed by control type so зачёт and
+/// экзамен can share the same 0/1 (недопуск/неявка) meaning while diverging
+/// on what 2 and above mean.
+const creditMarkShort = {0: 'Н/Д', 1: 'Н/Я', 2: 'не зач.', 3: 'зачет'};
+const examMarkShort = {
+  0: 'Н/Д',
+  1: 'Н/Я',
+  2: 'неуд',
+  3: 'удовл',
+  4: 'хор',
+  5: 'отл',
+};
+
+/// Full-word label for a mark, control-type aware. Use in dialogs,
+/// confirmations and anywhere space isn't tight.
+String markLabel(int controlType, int value) {
+  if (controlType == 0) return creditMarkLabels[value] ?? '$value';
+  return performanceMarks['$value'] ?? '$value';
+}
+
+/// Compact label for a mark, control-type aware. Use inside grid cells
+/// (gradebook journal, performance grid) where a badge is a few chars wide.
+String markShortLabel(int controlType, int value) {
+  if (controlType == 0) return creditMarkShort[value] ?? '$value';
+  return examMarkShort[value] ?? '$value';
+}
+
+/// Valid mark values for a given control type, in display order.
+List<int> markValuesFor(int controlType) =>
+    controlType == 0 ? creditMarkValues : (performanceMarks.keys.map(int.parse).toList()..sort());
+
+/// Shared color for a mark, control-type aware, used across the gradebook,
+/// performance grid and student portal so a given mark always reads the
+/// same color everywhere in the app.
+const _markColors = {
+  0: Color(0xFF374151), // недопуск
+  1: Color(0xFF6B7280), // неявка
+};
+Color markColor(int controlType, int value) {
+  if (_markColors.containsKey(value)) return _markColors[value]!;
+  if (controlType == 0) {
+    return value == 3 ? const Color(0xFF10B981) : const Color(0xFFEF4444);
+  }
+  return switch (value) {
+    5 => const Color(0xFF10B981),
+    4 => const Color(0xFF3B82F6),
+    3 => const Color(0xFFF59E0B),
+    _ => const Color(0xFFEF4444),
+  };
+}
 
 /// Lesson type colors for schedule cards
 const lessonTypeColors = {
@@ -95,7 +160,7 @@ const entityDefinitions = <EntityDefinition>[
     endpoint: '/students',
     columns: ['fio', 'faculty_id', 'speciality_id', 'group_id', 'phone'],
     fields: [
-      EntityField(key: 'fio', label: 'ФИО'),
+      EntityField(key: 'fio', label: 'ФИО', type: FieldType.fio),
       // Факультет → Специальность → Группа: каскадная фильтрация
       EntityField(
         key: 'faculty_id',
@@ -134,7 +199,7 @@ const entityDefinitions = <EntityDefinition>[
         label: 'Дата рождения',
         type: FieldType.date,
       ),
-      EntityField(key: 'phone', label: 'Телефон', required: false),
+      EntityField(key: 'phone', label: 'Телефон', required: false, type: FieldType.phone),
       EntityField(
         key: 'email',
         label: 'Email',
@@ -150,11 +215,11 @@ const entityDefinitions = <EntityDefinition>[
     endpoint: '/teachers',
     columns: ['fio', 'position', 'phone'],
     fields: [
-      EntityField(key: 'fio', label: 'ФИО'),
-      EntityField(key: 'scientific_degree', label: 'Степень', required: false),
-      EntityField(key: 'academic_title', label: 'Звание', required: false),
-      EntityField(key: 'position', label: 'Должность', required: false),
-      EntityField(key: 'phone', label: 'Телефон', required: false),
+      EntityField(key: 'fio', label: 'ФИО', type: FieldType.fio),
+      EntityField(key: 'scientific_degree', label: 'Степень', required: false, type: FieldType.fio),
+      EntityField(key: 'academic_title', label: 'Звание', required: false, type: FieldType.fio),
+      EntityField(key: 'position', label: 'Должность', required: false, type: FieldType.fio),
+      EntityField(key: 'phone', label: 'Телефон', required: false, type: FieldType.phone),
       EntityField(
         key: 'email',
         label: 'Email',
@@ -185,7 +250,7 @@ const entityDefinitions = <EntityDefinition>[
     title: 'Дисциплины',
     route: '/disciplines',
     endpoint: '/disciplines',
-    columns: ['subject_id', 'teacher_id', 'group_id'],
+    columns: ['subject_id', 'teacher_id', 'group_id', 'semester'],
     fields: [
       EntityField(
         key: 'subject_id',
@@ -206,6 +271,7 @@ const entityDefinitions = <EntityDefinition>[
         type: FieldType.fkSelect,
         refEndpoint: '/groups',
       ),
+      EntityField(key: 'semester', label: 'Семестр', type: FieldType.number),
       EntityField(
         key: 'lecture_hours',
         label: 'Лекции',

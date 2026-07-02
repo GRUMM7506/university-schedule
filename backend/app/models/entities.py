@@ -20,9 +20,13 @@ class ControlType(IntEnum):
 
 
 class AttendanceMark(IntEnum):
+    """Attendance only stores *exceptions*. A student who simply showed up
+    on time has no row at all — the teacher only taps students who were
+    late or absent, which is what makes marking a full group fast. Presence
+    is therefore never written to this table; it's the absence of a row for
+    a given (student, day_date, pair_num)."""
     absent = 0
     late = 1
-    present = 2
 
 
 class PerformanceMark(IntEnum):
@@ -145,6 +149,7 @@ class DisciplineLoad(Base):
     __tablename__ = "discipline_loads"
     __table_args__ = (
         CheckConstraint("lecture_hours >= 0 AND practical_hours >= 0 AND lab_hours >= 0 AND other_hours >= 0 AND control_hours >= 0", name="ck_load_hours_non_negative"),
+        CheckConstraint("semester BETWEEN 1 AND 12", name="ck_discipline_load_semester"),
         UniqueConstraint("subject_id", "teacher_id", "group_id", name="uq_load_subject_teacher_group"),
     )
 
@@ -152,6 +157,11 @@ class DisciplineLoad(Base):
     subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id", ondelete="RESTRICT"), nullable=False, index=True)
     teacher_id: Mapped[int] = mapped_column(ForeignKey("teachers.id", ondelete="RESTRICT"), nullable=False, index=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("student_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    # The semester this load is actually taught in. Usually mirrors the
+    # parent subject's "catalog" semester, but is kept independently since a
+    # given group/teacher assignment can run in a different real semester
+    # (retakes, shifted curricula, elective scheduling, etc).
+    semester: Mapped[int] = mapped_column(Integer, nullable=False)
     lecture_hours: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     practical_hours: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     lab_hours: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -172,6 +182,7 @@ class Attendance(Base):
     __tablename__ = "attendance"
     __table_args__ = (
         CheckConstraint("pair_num BETWEEN 1 AND 8", name="ck_attendance_pair"),
+        CheckConstraint("mark IN (0, 1)", name="ck_attendance_mark_binary"),
         UniqueConstraint("student_id", "day_date", "pair_num", name="uq_attendance_student_date_pair"),
         Index("ix_attendance_day_pair", "day_date", "pair_num"),
     )
@@ -187,6 +198,12 @@ class Performance(Base):
     __tablename__ = "performance"
     __table_args__ = (
         CheckConstraint("tour_num BETWEEN 1 AND 4", name="ck_performance_tour"),
+        # Зачёт (control_type=0) only ever uses 0..3 (недопуск/неявка/не
+        # зачёт/зачёт); экзамен (control_type=1) uses the full 0..5 scale.
+        CheckConstraint(
+            "(control_type = 0 AND mark BETWEEN 0 AND 3) OR (control_type = 1 AND mark BETWEEN 0 AND 5)",
+            name="ck_performance_mark_range",
+        ),
         UniqueConstraint("student_id", "discipline_id", "tour_num", name="uq_performance_student_discipline_tour"),
     )
 

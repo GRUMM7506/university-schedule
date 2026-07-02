@@ -57,7 +57,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
       // Создаём маппинг ID -> имя дисциплины
       for (final d in disciplines) {
         final id = d['id'] as int?;
-        final name = d['name'] ?? d['displayName'] ?? '#${id}';
+        final name = d['name'] ?? d['displayName'] ?? '#$id';
         if (id != null) {
           disciplineNames[id] = name.toString();
         }
@@ -283,38 +283,9 @@ class _ScheduleTabState extends State<_ScheduleTab> {
     1: '08:00–09:30',
     2: '09:45–11:15',
     3: '11:30–13:00',
-    4: '13:45–15:15',
-    5: '15:30–17:00',
-    6: '17:15–18:45',
+    4: '14:00–15:30',
+    5: '15:45–17:15',
   };
-
-  /// Получить статус посещаемости для конкретной пары (по дате и номеру пары)
-  /// Возвращает: (метка, иконка, цвет) или null если нет данных
-  ({String label, IconData icon, Color color})? _getAttendanceStatus(String date, int pairNum) {
-    for (final a in widget.attendance) {
-      if (a['day_date'].toString() == date && a['pair_num'] == pairNum) {
-        final mark = a['mark'] as int? ?? 2;
-        return switch (mark) {
-          2 => (
-            label: 'Присутствовал',
-            icon: Icons.check_circle,
-            color: const Color(0xFF10B981),
-          ),
-          1 => (
-            label: 'Опоздал',
-            icon: Icons.schedule,
-            color: const Color(0xFFF59E0B),
-          ),
-          _ => (
-            label: 'Отсутствовал',
-            icon: Icons.cancel,
-            color: const Color(0xFFEF4444),
-          ),
-        };
-      }
-    }
-    return null;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1077,10 +1048,11 @@ class _GradesTab extends StatelessWidget {
       itemBuilder: (context, i) {
         final g = grades[i];
         final mark = g['mark'] as int? ?? 0;
+        final controlType = g['control_type'] as int? ?? 1;
         // Использовать имя дисциплины из API, если доступно
         final disciplineName = g['discipline_name'] as String? ?? 
             (g['discipline_id'] != null ? 'Дисциплина #${g['discipline_id']}' : 'Неизвестная дисциплина');
-        final color = _markColor(mark);
+        final color = markColor(controlType, mark);
         return GlassPanel(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -1095,11 +1067,11 @@ class _GradesTab extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    '$mark',
+                    mark <= 1 ? markShortLabel(controlType, mark) : '$mark',
                     style: TextStyle(
                       color: color,
                       fontWeight: FontWeight.w900,
-                      fontSize: 22,
+                      fontSize: mark <= 1 ? 13 : 22,
                     ),
                   ),
                 ),
@@ -1116,7 +1088,7 @@ class _GradesTab extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      'Контроль: ${g['control_type'] == 1 ? 'Экзамен' : 'Зачет'} · Тур ${g['tour_num']}',
+                      'Контроль: ${controlType == 1 ? 'Экзамен' : 'Зачет'} · Тур ${g['tour_num']}',
                       style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1135,7 +1107,7 @@ class _GradesTab extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  _markLabel(mark),
+                  markLabel(controlType, mark),
                   style: TextStyle(
                     color: color,
                     fontWeight: FontWeight.w700,
@@ -1149,24 +1121,6 @@ class _GradesTab extends StatelessWidget {
       },
     );
   }
-
-  Color _markColor(int mark) => switch (mark) {
-    5 => const Color(0xFF10B981),
-    4 => const Color(0xFF3B82F6),
-    3 => const Color(0xFFF59E0B),
-    2 => const Color(0xFFEF4444),
-    _ => Colors.grey,
-  };
-
-  String _markLabel(int mark) => switch (mark) {
-    5 => 'Отлично',
-    4 => 'Хорошо',
-    3 => 'Удовл.',
-    2 => 'Неудовл.',
-    1 => 'Неявка',
-    0 => 'Недопуск',
-    _ => '$mark',
-  };
 }
 
 // ─── Attendance Tab ───────────────────────────────────────────────────────────
@@ -1179,21 +1133,33 @@ class _AttendanceTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (attendance.isEmpty) {
-      return const Center(child: Text('Данных о посещаемости нет'));
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Пропусков и опозданий нет — посещаемость в порядке',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.all(20),
-      itemCount: attendance.length,
+      itemCount: attendance.length + 1,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, i) {
-        final a = attendance[i];
-        final mark = a['mark'] as int? ?? 2;
+        if (i == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              'Здесь показаны только пропуски и опоздания — обычные посещённые пары в список не попадают',
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          );
+        }
+        final a = attendance[i - 1];
+        final mark = a['mark'] as int? ?? 0;
         final (label, icon, color) = switch (mark) {
-          2 => (
-            'Присутствовал',
-            Icons.check_circle_outline,
-            const Color(0xFF10B981),
-          ),
           1 => ('Опоздал', Icons.schedule_outlined, const Color(0xFFF59E0B)),
           _ => ('Отсутствовал', Icons.cancel_outlined, const Color(0xFFEF4444)),
         };
@@ -1205,9 +1171,8 @@ class _AttendanceTab extends StatelessWidget {
           1: '08:00–09:30',
           2: '09:45–11:15',
           3: '11:30–13:00',
-          4: '13:45–15:15',
-          5: '15:30–17:00',
-          6: '17:15–18:45',
+          4: '14:00–15:30',
+          5: '15:45–17:15',
         };
         final pairNum = a['pair_num'] as int? ?? 1;
         final time = pairTimes[pairNum] ?? '';

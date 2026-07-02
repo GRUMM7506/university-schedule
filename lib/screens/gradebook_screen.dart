@@ -501,6 +501,8 @@ class _GradebookScreenState extends State<GradebookScreen> {
                         child: studentData.containsKey(discId)
                             ? _MarkBadge(
                                 mark: studentData[discId]['mark'] as int,
+                                controlType:
+                                    (studentData[discId]['control_type'] as int?) ?? 1,
                                 compact: true,
                               )
                             : const Text(
@@ -533,11 +535,17 @@ class _GradebookScreenState extends State<GradebookScreen> {
 }
 
 class _MarkBadge extends StatelessWidget {
-  const _MarkBadge({required this.mark, this.label, this.compact = false});
+  const _MarkBadge({
+    required this.mark,
+    this.label,
+    this.compact = false,
+    this.controlType = 1,
+  });
 
   final int mark;
   final String? label;
   final bool compact;
+  final int controlType;
 
   Color get color => switch (mark) {
     5 => const Color(0xFF10B981),
@@ -552,21 +560,29 @@ class _MarkBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (compact) {
-      return Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: .15),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: .3)),
-        ),
-        child: Center(
-          child: Text(
-            '$mark',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w900,
-              fontSize: 14,
+      // Marks 0 (недопуск) and 1 (неявка) are shown as short text instead
+      // of a bare digit — a lone "0" or "1" in a journal cell reads like a
+      // grade, which is misleading since neither is actually a score.
+      final showsWord = mark <= 1;
+      return Tooltip(
+        message: markLabel(controlType, mark),
+        child: Container(
+          width: showsWord ? 40 : 32,
+          height: 32,
+          padding: showsWord ? const EdgeInsets.symmetric(horizontal: 4) : null,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .15),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withValues(alpha: .3)),
+          ),
+          child: Center(
+            child: Text(
+              showsWord ? markShortLabel(controlType, mark) : '$mark',
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w900,
+                fontSize: showsWord ? 10 : 14,
+              ),
             ),
           ),
         ),

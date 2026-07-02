@@ -44,6 +44,7 @@ class AuthProvider extends ChangeNotifier {
     const explicit = {
       '/gradebook': 'gradebook.view',
       '/schedule': 'schedule.view',
+      '/classrooms-map': 'classrooms.view',
       '/attendance': 'attendance.view',
       '/performance': 'performance.view',
       '/users-admin': 'users.manage',

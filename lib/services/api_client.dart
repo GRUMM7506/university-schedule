@@ -25,7 +25,13 @@ class ApiClient {
           if (e.response?.statusCode == 401) {
             onSessionExpired?.call();
           } else {
-            final message = e.response?.data?['detail'] ?? e.message ?? 'Произошла ошибка сети';
+            var detail = e.response?.data?['detail'];
+            String message;
+            if (detail is List) {
+              message = detail.map((e) => e is Map ? e['msg'] : e.toString()).join('\n');
+            } else {
+              message = detail?.toString() ?? e.message ?? 'Произошла ошибка сети';
+            }
             onError?.call(message);
           }
           handler.next(e);

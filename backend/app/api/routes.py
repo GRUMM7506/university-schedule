@@ -122,10 +122,27 @@ def student_dashboard(student_id: int, db: Session = Depends(get_db)):
     student = db.scalar(select(Student).where(Student.id == student_id))
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
-    attendance_total = db.scalar(select(func.count(Attendance.id)).where(Attendance.student_id == student_id)) or 0
-    attendance_present = db.scalar(
-        select(func.count(Attendance.id)).where(Attendance.student_id == student_id, Attendance.mark == 2)
+
+    # Attendance only stores exceptions (absent/late) — a lesson with no row
+    # for this student means they were present on time. So "total" has to
+    # come from how many lessons have actually happened (Schedule, up to
+    # today), not from counting Attendance rows.
+    today = date.today()
+    attendance_total = db.scalar(
+        select(func.count(Schedule.id))
+        .join(StudyWeek, StudyWeek.id == Schedule.study_week_id)
+        .where(Schedule.group_id == student.group_id, StudyWeek.end_date <= today)
     ) or 0
+    attendance_absent = db.scalar(
+        select(func.count(Attendance.id)).where(Attendance.student_id == student_id, Attendance.mark == 0)
+    ) or 0
+    attendance_late = db.scalar(
+        select(func.count(Attendance.id)).where(Attendance.student_id == student_id, Attendance.mark == 1)
+    ) or 0
+    # Being late still counts as attending for the headline rate; the exact
+    # late count is exposed separately for anyone who wants the detail.
+    attendance_present = max(attendance_total - attendance_absent - attendance_late, 0)
+
     avg_mark_row = db.scalar(
         select(func.avg(Performance.mark)).where(Performance.student_id == student_id)
     )
@@ -136,7 +153,11 @@ def student_dashboard(student_id: int, db: Session = Depends(get_db)):
         "group_id": student.group_id,
         "attendance_total": attendance_total,
         "attendance_present": attendance_present,
-        "attendance_rate": round(attendance_present / attendance_total * 100, 1) if attendance_total > 0 else 0,
+        "attendance_late": attendance_late,
+        "attendance_absent": attendance_absent,
+        "attendance_rate": round((attendance_total - attendance_absent) / attendance_total * 100, 1)
+        if attendance_total > 0
+        else 0,
         "avg_mark": avg_mark,
         "grades_count": grades_count,
     }
@@ -169,38 +190,6 @@ def teacher_dashboard(teacher_id: int, db: Session = Depends(get_db)):
     }
 
 
-# ─── CRUD Entities ─────────────────────────────────────────────────────────────
-
-entities = [
-    ("faculties", Faculty, FacultyCreate, FacultyUpdate, FacultyRead, False, True),
-    ("specialities", Speciality, SpecialityCreate, SpecialityUpdate, SpecialityRead, False, True),
-    ("classrooms", Classroom, ClassroomCreate, ClassroomUpdate, ClassroomRead, False, True),
-    ("subjects", Subject, SubjectCreate, SubjectUpdate, SubjectRead, False, True),
-    ("groups", StudentGroup, StudentGroupCreate, StudentGroupUpdate, StudentGroupRead, False, True),
-    ("teachers", Teacher, TeacherCreate, TeacherUpdate, TeacherRead, False, True),
-    ("students", Student, StudentCreate, StudentUpdate, StudentRead, False, True),
-    ("disciplines", DisciplineLoad, DisciplineLoadCreate, DisciplineLoadUpdate, DisciplineLoadRead, False, True),
-    ("study-weeks", StudyWeek, StudyWeekCreate, StudyWeekUpdate, StudyWeekRead, False, True),
-    ("attendance", Attendance, AttendanceCreate, AttendanceUpdate, AttendanceRead, True, False),
-    ("performance", Performance, PerformanceCreate, PerformanceUpdate, PerformanceRead, True, False),
-    ("execution", Execution, ExecutionCreate, ExecutionUpdate, ExecutionRead, True, False),
-    ("schedule", Schedule, ScheduleCreate, ScheduleUpdate, ScheduleRead, True, False),
-]
-
-for prefix, model, create_schema, update_schema, read_schema, staff_read, any_read in entities:
-    api_router.include_router(
-        build_crud_router(
-            model=model,
-            create_schema=create_schema,
-            update_schema=update_schema,
-            read_schema=read_schema,
-            staff_read=staff_read,
-            any_read=any_read,
-            permission_prefix=prefix,
-        ),
-        prefix=f"/{prefix}",
-        tags=[prefix],
-    )
 
 
 # ─── Schedule Views ────────────────────────────────────────────────────────────
@@ -259,6 +248,101 @@ def student_schedule(student_id: int, week_id: int | None = None, db: Session = 
     return [ScheduleView(**row._asdict()) for row in db.execute(stmt).all()]
 
 
+# ─── Classroom occupancy ────────────────────────────────────────────────────
+
+@api_router.get("/classrooms/occupancy", dependencies=[Depends(require_any)])
+def classrooms_occupancy(
+    week_id: int,
+    day_num: int,
+    db: Session = Depends(get_db),
+):
+    """For every classroom, what (if anything) is booked into each pair of
+    the given day/week. Powers the "which room is free" screen: one query,
+    the frontend slices it by pair or by free/occupied as needed."""
+    classrooms = db.scalars(select(Classroom).order_by(Classroom.number)).all()
+    stmt = schedule_view_stmt().where(
+        Schedule.study_week_id == week_id,
+        Schedule.day_num == day_num,
+    )
+    rows = db.execute(stmt).all()
+
+    by_classroom: dict[int, dict[int, dict]] = {}
+    for row in rows:
+        by_classroom.setdefault(row.classroom_id, {})[row.pair_num] = {
+            "schedule_id": row.id,
+            "subject": row.subject,
+            "subject_id": row.subject_id,
+            "teacher": row.teacher,
+            "teacher_id": row.teacher_id,
+            "group": row.group,
+            "group_id": row.group_id,
+            "lesson_type": row.lesson_type,
+        }
+
+    return [
+        {
+            "id": c.id,
+            "number": c.number,
+            "type": c.type,
+            "pairs": by_classroom.get(c.id, {}),
+        }
+        for c in classrooms
+    ]
+
+
+# ─── Schedule slot conflicts ────────────────────────────────────────────────
+
+@api_router.get("/schedule/check-slot", dependencies=[Depends(require_permission("schedule.view"))])
+def check_schedule_slot(
+    week_id: int,
+    day_num: int,
+    pair_num: int,
+    teacher_id: int | None = None,
+    classroom_id: int | None = None,
+    group_id: int | None = None,
+    exclude_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """Everything already booked into this exact week/day/pair, plus flags
+    telling the caller whether the *currently selected* teacher/classroom/
+    group specifically clash with one of those bookings. Used by the
+    schedule form to warn before the user hits save, not just after."""
+    stmt = schedule_view_stmt().where(
+        Schedule.study_week_id == week_id,
+        Schedule.day_num == day_num,
+        Schedule.pair_num == pair_num,
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(Schedule.id != exclude_id)
+    rows = db.execute(stmt).all()
+
+    bookings = [
+        {
+            "schedule_id": row.id,
+            "subject": row.subject,
+            "teacher": row.teacher,
+            "teacher_id": row.teacher_id,
+            "classroom": row.classroom,
+            "classroom_id": row.classroom_id,
+            "group": row.group,
+            "group_id": row.group_id,
+            "lesson_type": row.lesson_type,
+        }
+        for row in rows
+    ]
+
+    teacher_conflict = next((b for b in bookings if teacher_id is not None and b["teacher_id"] == teacher_id), None)
+    classroom_conflict = next((b for b in bookings if classroom_id is not None and b["classroom_id"] == classroom_id), None)
+    group_conflict = next((b for b in bookings if group_id is not None and b["group_id"] == group_id), None)
+
+    return {
+        "bookings": bookings,
+        "teacher_conflict": teacher_conflict,
+        "classroom_conflict": classroom_conflict,
+        "group_conflict": group_conflict,
+    }
+
+
 # ─── Student Detail Endpoints ──────────────────────────────────────────────────
 
 @api_router.get("/students/{student_id}/attendance", response_model=list[AttendanceRead], dependencies=[Depends(require_permission("attendance.view"))])
@@ -277,8 +361,10 @@ def student_performance(student_id: int, db: Session = Depends(get_db)):
 
 @api_router.post("/attendance/bulk", response_model=list[AttendanceRead], dependencies=[Depends(require_permission("attendance.edit"))])
 def save_attendance_bulk(items: list[AttendanceBulkItem], db: Session = Depends(get_db)):
-    """Upsert attendance records. All items are saved atomically — the whole
-    batch is rolled back if any record violates a constraint (T4 fix)."""
+    """Upsert attendance *exceptions*. A student sent with mark=None is
+    presumed present — any previously-recorded absent/late row for that
+    slot is deleted rather than updated, since presence itself is never
+    stored. The whole batch is saved atomically."""
     saved = []
     try:
         for item in items:
@@ -289,6 +375,10 @@ def save_attendance_bulk(items: list[AttendanceBulkItem], db: Session = Depends(
                     Attendance.pair_num == item.pair_num,
                 )
             )
+            if item.mark is None:
+                if existing:
+                    db.delete(existing)
+                continue
             if existing:
                 existing.mark = item.mark
                 saved.append(existing)
@@ -350,3 +440,37 @@ def faculty_statistics(faculty_id: int, db: Session = Depends(get_db)):
         or 0
     )
     return FacultyStatistics(students_count=students, groups_count=groups, teachers_count=teachers)
+
+
+# ─── CRUD Entities ─────────────────────────────────────────────────────────────
+
+entities = [
+    ("faculties", Faculty, FacultyCreate, FacultyUpdate, FacultyRead, False, True),
+    ("specialities", Speciality, SpecialityCreate, SpecialityUpdate, SpecialityRead, False, True),
+    ("classrooms", Classroom, ClassroomCreate, ClassroomUpdate, ClassroomRead, False, True),
+    ("subjects", Subject, SubjectCreate, SubjectUpdate, SubjectRead, False, True),
+    ("groups", StudentGroup, StudentGroupCreate, StudentGroupUpdate, StudentGroupRead, False, True),
+    ("teachers", Teacher, TeacherCreate, TeacherUpdate, TeacherRead, False, True),
+    ("students", Student, StudentCreate, StudentUpdate, StudentRead, False, True),
+    ("disciplines", DisciplineLoad, DisciplineLoadCreate, DisciplineLoadUpdate, DisciplineLoadRead, False, True),
+    ("study-weeks", StudyWeek, StudyWeekCreate, StudyWeekUpdate, StudyWeekRead, False, True),
+    ("attendance", Attendance, AttendanceCreate, AttendanceUpdate, AttendanceRead, True, False),
+    ("performance", Performance, PerformanceCreate, PerformanceUpdate, PerformanceRead, True, False),
+    ("execution", Execution, ExecutionCreate, ExecutionUpdate, ExecutionRead, True, False),
+    ("schedule", Schedule, ScheduleCreate, ScheduleUpdate, ScheduleRead, True, False),
+]
+
+for prefix, model, create_schema, update_schema, read_schema, staff_read, any_read in entities:
+    api_router.include_router(
+        build_crud_router(
+            model=model,
+            create_schema=create_schema,
+            update_schema=update_schema,
+            read_schema=read_schema,
+            staff_read=staff_read,
+            any_read=any_read,
+            permission_prefix=prefix,
+        ),
+        prefix=f"/{prefix}",
+        tags=[prefix],
+    )

@@ -1,7 +1,27 @@
+import re
 from datetime import date
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+
+_FIO_PATTERN = re.compile(r"^[A-Za-zА-Яа-яЁё\s\-]+$")
+_PHONE_PATTERN = re.compile(r"^\+?[0-9\s\-()]+$")
+
+
+def _validate_fio(value: str | None) -> str | None:
+    if value is None:
+        return value
+    if not _FIO_PATTERN.match(value):
+        raise ValueError("ФИО должно содержать только буквы, пробелы и дефис")
+    return value
+
+
+def _validate_phone(value: str | None) -> str | None:
+    if value is None or value == "":
+        return value
+    if not _PHONE_PATTERN.match(value):
+        raise ValueError("Телефон должен содержать только цифры, пробелы, скобки, дефис и знак +")
+    return value
 
 
 class OrmModel(BaseModel):
@@ -158,6 +178,9 @@ class TeacherBase(BaseModel):
     address: str | None = None
     email: EmailStr | None = None
 
+    _v_fio = field_validator("fio")(_validate_fio)
+    _v_phone = field_validator("phone")(_validate_phone)
+
 
 class TeacherCreate(TeacherBase):
     pass
@@ -172,6 +195,9 @@ class TeacherUpdate(BaseModel):
     address: str | None = None
     email: EmailStr | None = None
 
+    _v_fio = field_validator("fio")(_validate_fio)
+    _v_phone = field_validator("phone")(_validate_phone)
+
 
 class TeacherRead(TeacherBase, OrmModel):
     id: int
@@ -184,6 +210,9 @@ class StudentBase(BaseModel):
     address: str | None = None
     email: EmailStr | None = None
     birth_date: date
+
+    _v_fio = field_validator("fio")(_validate_fio)
+    _v_phone = field_validator("phone")(_validate_phone)
 
 
 class StudentCreate(StudentBase):
@@ -198,6 +227,9 @@ class StudentUpdate(BaseModel):
     email: EmailStr | None = None
     birth_date: date | None = None
 
+    _v_fio = field_validator("fio")(_validate_fio)
+    _v_phone = field_validator("phone")(_validate_phone)
+
 
 class StudentRead(StudentBase, OrmModel):
     id: int
@@ -207,6 +239,7 @@ class DisciplineLoadBase(BaseModel):
     subject_id: int
     teacher_id: int
     group_id: int
+    semester: int = Field(ge=1, le=12)
     lecture_hours: int = Field(ge=0)
     practical_hours: int = Field(ge=0)
     lab_hours: int = Field(ge=0)
@@ -222,6 +255,7 @@ class DisciplineLoadUpdate(BaseModel):
     subject_id: int | None = None
     teacher_id: int | None = None
     group_id: int | None = None
+    semester: int | None = Field(default=None, ge=1, le=12)
     lecture_hours: int | None = Field(default=None, ge=0)
     practical_hours: int | None = Field(default=None, ge=0)
     lab_hours: int | None = Field(default=None, ge=0)
@@ -236,7 +270,10 @@ class AttendanceBase(BaseModel):
     student_id: int
     day_date: date
     pair_num: int = Field(ge=1, le=8)
-    mark: int = Field(ge=0, le=2)
+    # A stored row is always an exception: 0 = отсутствовал, 1 = опоздал.
+    # Presence is never stored — no row for a (student, day_date, pair_num)
+    # means the student was simply there on time.
+    mark: int = Field(ge=0, le=1)
 
 
 class AttendanceCreate(AttendanceBase):
@@ -247,7 +284,7 @@ class AttendanceUpdate(BaseModel):
     student_id: int | None = None
     day_date: date | None = None
     pair_num: int | None = Field(default=None, ge=1, le=8)
-    mark: int | None = Field(default=None, ge=0, le=2)
+    mark: int | None = Field(default=None, ge=0, le=1)
 
 
 class AttendanceRead(AttendanceBase, OrmModel):
@@ -258,7 +295,20 @@ class AttendanceBulkItem(BaseModel):
     student_id: int
     day_date: date
     pair_num: int = Field(ge=1, le=8)
-    mark: int = Field(ge=0, le=2)
+    # None = present (the default) — clears any existing absent/late record
+    # for this slot. 0 = отсутствовал, 1 = опоздал.
+    mark: int | None = Field(default=None, ge=0, le=1)
+
+
+def _validate_mark_for_control_type(control_type: int | None, mark: int | None) -> None:
+    """Зачёт (0) only uses 0..3 — недопуск/неявка/не зачёт/зачёт.
+    Экзамен (1) uses the full 0..5 scale."""
+    if control_type is None or mark is None:
+        return
+    if control_type == 0 and not (0 <= mark <= 3):
+        raise ValueError("Для зачёта оценка должна быть в диапазоне 0-3 (недопуск/неявка/не зачёт/зачёт)")
+    if control_type == 1 and not (0 <= mark <= 5):
+        raise ValueError("Для экзамена оценка должна быть в диапазоне 0-5")
 
 
 class PerformanceBase(BaseModel):
@@ -268,6 +318,11 @@ class PerformanceBase(BaseModel):
     control_type: int = Field(ge=0, le=1)
     tour_num: int = Field(ge=1, le=4)
     mark: int = Field(ge=0, le=5)
+
+    @model_validator(mode="after")
+    def _check_mark_range(self):
+        _validate_mark_for_control_type(self.control_type, self.mark)
+        return self
 
 
 class PerformanceCreate(PerformanceBase):
@@ -281,6 +336,11 @@ class PerformanceUpdate(BaseModel):
     control_type: int | None = Field(default=None, ge=0, le=1)
     tour_num: int | None = Field(default=None, ge=1, le=4)
     mark: int | None = Field(default=None, ge=0, le=5)
+
+    @model_validator(mode="after")
+    def _check_mark_range(self):
+        _validate_mark_for_control_type(self.control_type, self.mark)
+        return self
 
 
 class PerformanceRead(PerformanceBase, OrmModel):

@@ -20,6 +20,14 @@ class EntityFormDialog extends StatefulWidget {
   State<EntityFormDialog> createState() => _EntityFormDialogState();
 }
 
+/// Only Cyrillic/Latin letters, spaces and hyphens — used for ФИО-style
+/// fields so a name can't accidentally end up with a digit or symbol in it.
+final RegExp _fioAllowed = RegExp(r'^[A-Za-zА-Яа-яЁё\s\-]*$');
+
+/// Digits, spaces, +, - and parentheses — enough for any phone format
+/// without allowing letters or stray punctuation.
+final RegExp _phoneAllowed = RegExp(r'^[0-9\s\-()+]*$');
+
 class _EntityFormDialogState extends State<EntityFormDialog> {
   final formKey = GlobalKey<FormState>();
   late final Map<String, TextEditingController> controllers;
@@ -309,10 +317,14 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
 
     return TextFormField(
       controller: controllers[field.key],
-      decoration: InputDecoration(labelText: field.label),
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      decoration: InputDecoration(
+        labelText: field.label,
+      ),
       keyboardType: switch (field.type) {
         FieldType.number => TextInputType.number,
         FieldType.email => TextInputType.emailAddress,
+        FieldType.phone => TextInputType.phone,
         _ => TextInputType.text,
       },
       validator: (value) => _validateTextField(field, value),
@@ -322,13 +334,35 @@ class _EntityFormDialogState extends State<EntityFormDialog> {
   String? _validateTextField(EntityField field, String? value) {
     final text = value?.trim() ?? '';
     if (field.required && text.isEmpty) return 'Заполните поле';
-    if (field.type == FieldType.email && text.isNotEmpty) {
+    if (text.isEmpty) return null;
+    
+    if (field.type == FieldType.number) {
+      if (int.tryParse(text) == null) {
+        return 'Здесь можно использовать только цифры';
+      }
+    }
+    
+    if (field.type == FieldType.email) {
       final emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
       if (!emailPattern.hasMatch(text)) {
         return 'Введите корректный email';
       }
     }
-    if (field.type == FieldType.date && text.isNotEmpty) {
+    if (field.type == FieldType.fio) {
+      if (!_fioAllowed.hasMatch(text)) {
+        return 'Здесь можно использовать только буквы, пробел и дефис';
+      }
+      if (text.trim().split(RegExp(r'\s+')).length < 2 && field.key == 'fio') {
+        return 'Укажите фамилию и имя';
+      }
+    }
+    if (field.type == FieldType.phone) {
+      final digitsOnly = text.replaceAll(RegExp(r'[^0-9]'), '');
+      if (!_phoneAllowed.hasMatch(text) || digitsOnly.length < 7) {
+        return 'Здесь можно использовать только цифры и символы + - ( )';
+      }
+    }
+    if (field.type == FieldType.date) {
       try {
         DateFormat('dd.MM.yyyy').parseStrict(text);
         return null;

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../models/entities.dart';
 import '../providers/auth_provider.dart';
 import '../services/academic_service.dart';
 
@@ -24,14 +23,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   List<Map<String, dynamic>> faculties = [];
   List<Map<String, dynamic>> specialities = [];
   List<Map<String, dynamic>> students = [];
-  final marks = <int, int>{};
+  // A student with no entry in `marks` (or an explicit null) is presumed
+  // present — only exceptions are tracked, so the teacher never has to tap
+  // anything for the students who simply showed up on time.
+  final marks = <int, int?>{};
   bool loading = true;
   bool saving = false;
   String search = '';
 
-  static const _present = 2;
-  static const _late = 1;
   static const _absent = 0;
+  static const _late = 1;
 
   @override
   void initState() {
@@ -139,9 +140,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       students = allStudents.where((s) => s['group_id'] == groupId).toList()
         ..sort((a, b) => '${a['fio']}'.compareTo('${b['fio']}'));
       marks.clear();
-      for (final student in students) {
-        marks.putIfAbsent(student['id'] as int, () => _present);
-      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -191,7 +189,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             'student_id': student['id'],
             'day_date': date,
             'pair_num': pairNum,
-            'mark': marks[student['id']] ?? _present,
+            'mark': marks[student['id']],
           },
       ]);
       if (mounted) {
@@ -204,7 +202,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
-  void _setAll(int mark) {
+  void _setAll(int? mark) {
     setState(() {
       for (final student in _visibleStudents) {
         marks[student['id'] as int] = mark;
@@ -218,14 +216,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return students.where((s) => '${s['fio']}'.toLowerCase().contains(q)).toList();
   }
 
-  Map<int, int> get _counts {
-    final result = {_present: 0, _late: 0, _absent: 0};
-    for (final student in students) {
-      final m = marks[student['id']] ?? _present;
-      result[m] = (result[m] ?? 0) + 1;
-    }
-    return result;
-  }
+  int get _absentCount => students.where((s) => marks[s['id']] == _absent).length;
+  int get _lateCount => students.where((s) => marks[s['id']] == _late).length;
+  int get _presentCount => students.length - _absentCount - _lateCount;
 
   Widget _buildDropdown(
     String label,
@@ -282,7 +275,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final counts = _counts;
     final visible = _visibleStudents;
     final canEdit = context.watch<AuthProvider>().hasPermission('attendance.edit');
 
@@ -404,15 +396,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                _countChip('Присутствуют', counts[_present] ?? 0, const Color(0xFF10B981)),
-                _countChip('Опоздали', counts[_late] ?? 0, const Color(0xFFF59E0B)),
-                _countChip('Отсутствуют', counts[_absent] ?? 0, const Color(0xFFEF4444)),
+                _countChip('Присутствуют', _presentCount, const Color(0xFF10B981)),
+                _countChip('Опоздали', _lateCount, const Color(0xFFF59E0B)),
+                _countChip('Отсутствуют', _absentCount, const Color(0xFFEF4444)),
                 const SizedBox(width: 8),
                 if (canEdit) ...[
                   TextButton.icon(
-                    onPressed: () => _setAll(_present),
+                    onPressed: () => _setAll(null),
                     icon: const Icon(Icons.done_all, size: 18),
-                    label: const Text('Все присутствуют'),
+                    label: const Text('Сбросить (все присутствуют)'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _setAll(_late),
+                    icon: const Icon(Icons.schedule, size: 18),
+                    label: const Text('Все опоздали'),
                   ),
                   TextButton.icon(
                     onPressed: () => _setAll(_absent),
@@ -452,7 +449,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           itemBuilder: (context, i) {
                             final student = visible[i];
                             final sid = student['id'] as int;
-                            final mark = marks[sid] ?? _present;
+                            final mark = marks[sid];
                             return _StudentRow(
                               fio: '${student['fio']}',
                               email: '${student['email']}',
@@ -494,31 +491,118 @@ class _StudentRow extends StatelessWidget {
 
   final String fio;
   final String email;
-  final int mark;
+  final int? mark;
   final bool canEdit;
-  final ValueChanged<int> onChanged;
+  final ValueChanged<int?> onChanged;
 
-  Color get _markColor => switch (mark) {
-        2 => const Color(0xFF10B981),
-        1 => const Color(0xFFF59E0B),
-        _ => const Color(0xFFEF4444),
+  static const _absent = 0;
+  static const _late = 1;
+
+  Color get _rowColor => switch (mark) {
+        _absent => const Color(0xFFEF4444),
+        _late => const Color(0xFFF59E0B),
+        _ => const Color(0xFF10B981),
       };
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: _markColor, width: 3)),
+        border: Border(left: BorderSide(color: _rowColor, width: 3)),
       ),
-      child: ListTile(
-        title: Text(fio, style: const TextStyle(fontWeight: FontWeight.w500)),
-        subtitle: Text(email, style: const TextStyle(fontSize: 12)),
-        trailing: SegmentedButton<int>(
-          segments: attendanceMarks.entries
-              .map((e) => ButtonSegment(value: int.parse(e.key), label: Text(e.value)))
-              .toList(),
-          selected: {mark},
-          onSelectionChanged: canEdit ? (value) => onChanged(value.first) : null,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: _rowColor.withValues(alpha: .12),
+            child: Text(
+              fio.isNotEmpty ? fio[0] : '?',
+              style: TextStyle(color: _rowColor, fontWeight: FontWeight.w900, fontSize: 13),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(fio, style: const TextStyle(fontWeight: FontWeight.w500)),
+                Text(email, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              ],
+            ),
+          ),
+          // Presence is the default and is never tapped — the teacher only
+          // touches one of these two toggles for the students who weren't
+          // simply there on time, which is what keeps marking a group fast.
+          _ExceptionToggle(
+            label: 'Опоздал',
+            icon: Icons.schedule,
+            color: const Color(0xFFF59E0B),
+            active: mark == _late,
+            onTap: canEdit ? () => onChanged(mark == _late ? null : _late) : null,
+          ),
+          const SizedBox(width: 8),
+          _ExceptionToggle(
+            label: 'Отсутствует',
+            icon: Icons.cancel,
+            color: const Color(0xFFEF4444),
+            active: mark == _absent,
+            onTap: canEdit ? () => onChanged(mark == _absent ? null : _absent) : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small pill button for one exception state. Filled and colored when
+/// active; a quiet outline when not, so an untouched (present) row stays
+/// visually calm and the exceptions are what draw the eye.
+class _ExceptionToggle extends StatelessWidget {
+  const _ExceptionToggle({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool active;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: active ? color.withValues(alpha: .15) : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: active ? color.withValues(alpha: .5) : color.withValues(alpha: .25)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: active ? color : color.withValues(alpha: .55)),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: active ? color : color.withValues(alpha: .55),
+                  fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                  fontSize: 12.5,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

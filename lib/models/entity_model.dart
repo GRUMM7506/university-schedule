@@ -44,7 +44,9 @@ class EntityField {
   final String? foreignKey;
 }
 
-enum FieldType { text, number, date, email, select, fkSelect }
+/// `fio`: only letters (Cyrillic/Latin), spaces and hyphens.
+/// `phone`: only digits, spaces, `+`, `-`, `(` and `)`.
+enum FieldType { text, number, date, email, select, fkSelect, fio, phone }
 
 class EntityDefinition {
   const EntityDefinition({
